@@ -1,0 +1,1 @@
+./invoice-agent $RUN_MODE

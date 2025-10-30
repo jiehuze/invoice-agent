@@ -1,0 +1,5 @@
+output/*
+.idea
+.idea/*
+invoice-agent
+.DS_Store
