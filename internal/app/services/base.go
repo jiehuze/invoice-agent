@@ -1,7 +1,6 @@
 package services
 
 import (
-	"fmt"
 	"invoice-agent/pkg/config"
 	"sync"
 
@@ -10,13 +9,17 @@ import (
 )
 
 var initOnce sync.Once
-var ()
+
+var (
+	InvoiceFile IInvoiceFile
+)
 
 func Init() {
 	initOnce.Do(func() {
 		NewOpenAIClient(config.GetOpenaiConf().ApiKey)
 		NewChantClient(config.GetOpenaiConf().ApiKey)
-		fmt.Println("=========prompt: ", config.GetOpenaiConf().Prompt)
+		//fmt.Println("=========prompt: ", config.GetOpenaiConf().Prompt)
+		InvoiceFile = NewInvoiceFileService()
 	})
 }
 

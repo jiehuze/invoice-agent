@@ -3,6 +3,7 @@ package routers
 import (
 	"invoice-agent/internal/app/controllers"
 	v1 "invoice-agent/internal/app/controllers/v1"
+	"invoice-agent/internal/app/services"
 
 	"sync"
 
@@ -26,6 +27,16 @@ func SetUp() *gin.Engine {
 		mainGroup.GET("/start", v1.InvoiceStart)
 		mainGroup.GET("/chat", v1.InvoiceChat)
 
+		controller := v1.NewInvoiceFileController(services.InvoiceFile)
+
+		invoiceFileGroup := mainGroup.Group("/files")
+		{
+			invoiceFileGroup.POST("/add", controller.CreateInvoiceFile)
+			invoiceFileGroup.GET("/list", controller.ListInvoiceFiles)
+			invoiceFileGroup.GET("/:id", controller.GetInvoiceFile)
+			invoiceFileGroup.PUT("/update/:id", controller.UpdateInvoiceFile)
+			invoiceFileGroup.DELETE("/:id", controller.DeleteInvoiceFile)
+		}
 	})
 
 	return g

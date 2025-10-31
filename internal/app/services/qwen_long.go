@@ -33,6 +33,7 @@ func (p *QwenLongClient) Chat(ctx context.Context, fileIds []string) (*string, e
 		msg = append(msg, openai.SystemMessage("fileid://"+s))
 	}
 	msg = append(msg, openai.UserMessage(config.GetOpenaiConf().Prompt))
+	p.client.Chat.Completions.NewStreaming(ctx, openai.ChatCompletionNewParams{})
 	chatCompletion, err := p.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
 		Messages: msg,
 		Model:    config.GetOpenaiConf().Model,
@@ -49,4 +50,44 @@ func (p *QwenLongClient) Chat(ctx context.Context, fileIds []string) (*string, e
 	//	fmt.Println(err.Error())
 	//	return err
 	//}
+}
+
+func (p *QwenLongClient) ChatStream(ctx context.Context, fileIds []string) (<-chan string, <-chan error) {
+	contentChan := make(chan string)
+	errorChan := make(chan error, 1) // 缓冲通道，避免goroutine泄漏
+
+	go func() {
+		defer close(contentChan)
+		defer close(errorChan)
+
+		msg := make([]openai.ChatCompletionMessageParamUnion, 0)
+		msg = append(msg, openai.SystemMessage("You are a helpful assistant."))
+		for _, s := range fileIds {
+			msg = append(msg, openai.SystemMessage("fileid://"+s))
+		}
+		msg = append(msg, openai.UserMessage(config.GetOpenaiConf().Prompt))
+
+		// 创建流式请求
+		stream := p.client.Chat.Completions.NewStreaming(ctx, openai.ChatCompletionNewParams{
+			Messages: msg,
+			Model:    config.GetOpenaiConf().Model,
+		})
+
+		// 处理流式响应
+		for stream.Next() {
+			chunk := stream.Current()
+			if len(chunk.Choices) > 0 {
+				content := chunk.Choices[0].Delta.Content
+				if content != "" {
+					contentChan <- content
+				}
+			}
+		}
+
+		if err := stream.Err(); err != nil {
+			errorChan <- err
+		}
+	}()
+
+	return contentChan, errorChan
 }
