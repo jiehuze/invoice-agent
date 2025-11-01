@@ -20,6 +20,18 @@ func (r *InvoiceFileRepository) Create(invoiceFile *models.InvoiceFile) error {
 	return storage.DB.Create(invoiceFile).Error
 }
 
+// CreateBatch 批量创建发票文件记录
+func (r *InvoiceFileRepository) CreateBatch(invoiceFiles []models.InvoiceFile) error {
+	// 验证所有记录
+	for i := range invoiceFiles {
+		if err := invoiceFiles[i].Validate(); err != nil {
+			return err
+		}
+	}
+
+	return storage.DB.CreateInBatches(invoiceFiles, 100).Error
+}
+
 // Update 更新发票文件记录（支持部分字段更新）
 func (r *InvoiceFileRepository) Update(id uint64, invoiceFile *models.InvoiceFile) error {
 	// 创建一个map来存储非零值字段
@@ -98,6 +110,45 @@ func (r *InvoiceFileRepository) GetByFileID(fileID string) (*models.InvoiceFile,
 func (r *InvoiceFileRepository) List(limit, offset int) ([]models.InvoiceFile, error) {
 	var invoiceFiles []models.InvoiceFile
 	err := storage.DB.Limit(limit).Offset(offset).Find(&invoiceFiles).Error
+	return invoiceFiles, err
+}
+
+func (r *InvoiceFileRepository) ListByCont(invoice models.InvoiceFile, limit, offset int) ([]models.InvoiceFile, error) {
+	var invoiceFiles []models.InvoiceFile
+	db := storage.DB
+
+	if invoice.InvoiceType != "" {
+		db = db.Where("invoice_type = ?", invoice.InvoiceType)
+	}
+	if invoice.InvoiceCode != "" {
+		db = db.Where("invoice_code = ?", invoice.InvoiceCode)
+	}
+	if invoice.DocumentNumber != "" {
+		db = db.Where("document_number = ?", invoice.DocumentNumber)
+	}
+	if invoice.FileName != "" {
+		db = db.Where("file_name = ?", invoice.FileName)
+	}
+	if invoice.FileID != "" {
+		db = db.Where("file_id = ?", invoice.FileID)
+	}
+	if invoice.IssueDate != "" {
+		db = db.Where("issue_date = ?", invoice.IssueDate)
+	}
+	if invoice.BuyerName != "" {
+		db = db.Where("buyer_name = ?", invoice.BuyerName)
+	}
+	if invoice.SellerName != "" {
+		db = db.Where("seller_name = ?", invoice.SellerName)
+	}
+	if invoice.ItemName != "" {
+		db = db.Where("item_name = ?", invoice.ItemName)
+	}
+	if invoice.ExpenseCategory != "" {
+		db = db.Where("expense_category = ?", invoice.ExpenseCategory)
+	}
+
+	err := db.Limit(limit).Offset(offset).Find(&invoiceFiles).Error
 	return invoiceFiles, err
 }
 

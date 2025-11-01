@@ -26,6 +26,7 @@ type InvoiceFile struct {
 	ID              uint64          `gorm:"primaryKey;autoIncrement;comment:主键" json:"id"`
 	InvoiceType     string          `gorm:"size:100;default:null;comment:票据类型" json:"invoice_type"`
 	InvoiceCode     string          `gorm:"size:100;default:null;comment:发票号码" json:"invoice_code"`
+	DocumentNumber  string          `gorm:"size:100;default:null;comment:报销单据编号" json:"document_number"` // 新增字段
 	IssueDate       string          `gorm:"size:20;default:null;comment:开票日期" json:"issue_date"`
 	ServiceType     ServiceType     `gorm:"not null;comment:服务类型：1=发票类，2=非发票类" json:"service_type"`
 	Amount          float64         `gorm:"type:decimal(10,2);default:null;comment:金额（不含税）" json:"amount"`
