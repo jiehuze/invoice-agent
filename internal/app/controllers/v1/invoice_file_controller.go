@@ -11,11 +11,11 @@ import (
 )
 
 type InvoiceFileController struct {
-	service services.IInvoiceFile
+	invoiceFileService services.IInvoiceFile
 }
 
 func NewInvoiceFileController(service services.IInvoiceFile) *InvoiceFileController {
-	return &InvoiceFileController{service: service}
+	return &InvoiceFileController{invoiceFileService: service}
 }
 
 // CreateInvoiceFile 创建发票文件
@@ -26,7 +26,7 @@ func (c *InvoiceFileController) CreateInvoiceFile(ctx *gin.Context) {
 		return
 	}
 
-	if err := c.service.CreateInvoiceFile(&invoiceFile); err != nil {
+	if err := c.invoiceFileService.CreateInvoiceFile(&invoiceFile); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -42,7 +42,7 @@ func (c *InvoiceFileController) CreateInvoiceFilesBatch(ctx *gin.Context) {
 		return
 	}
 
-	if err := c.service.CreateInvoiceFilesBatch(invoiceFiles); err != nil {
+	if err := c.invoiceFileService.CreateInvoiceFilesBatch(invoiceFiles); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -64,7 +64,7 @@ func (c *InvoiceFileController) UpdateInvoiceFile(ctx *gin.Context) {
 		return
 	}
 
-	if err := c.service.UpdateInvoiceFile(id, &invoiceFile); err != nil {
+	if err := c.invoiceFileService.UpdateInvoiceFile(id, &invoiceFile); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -80,7 +80,7 @@ func (c *InvoiceFileController) GetInvoiceFile(ctx *gin.Context) {
 		return
 	}
 
-	invoiceFile, err := c.service.GetInvoiceFileByID(id)
+	invoiceFile, err := c.invoiceFileService.GetInvoiceFileByID(id)
 	if err != nil {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "invoice file not found"})
 		return
@@ -98,7 +98,7 @@ func (c *InvoiceFileController) ListInvoiceFiles(ctx *gin.Context) {
 		DocumentNumber: documentNumber,
 	}
 
-	invoiceFiles, err := c.service.ListInvoiceFilesByCont(invoiceFile, limit, offset)
+	invoiceFiles, err := c.invoiceFileService.ListInvoiceFilesByCont(invoiceFile, limit, offset)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -115,7 +115,7 @@ func (c *InvoiceFileController) DeleteInvoiceFile(ctx *gin.Context) {
 		return
 	}
 
-	if err := c.service.DeleteInvoiceFile(id); err != nil {
+	if err := c.invoiceFileService.DeleteInvoiceFile(id); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

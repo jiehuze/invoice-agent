@@ -11,8 +11,19 @@ import (
 )
 
 func InvoiceStart(c *gin.Context) {
-	services.AutoFillingServiceStart()
-	controllers.Response(c, code.Success, "success", nil)
+	// 设置响应头支持流式输出
+	c.Header("Content-Type", "text/event-stream; charset=utf-8")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+
+	progressChan := make(chan string, 100)
+	go services.AutoFillingServiceStart(progressChan)
+	// 监听自动填充服务的进度
+	for progress := range progressChan {
+		c.Writer.WriteString("AI执行: " + progress + "\n")
+		c.Writer.Flush()
+	}
+	//controllers.Response(c, code.Success, "success", nil)
 }
 
 func InvoiceChat(c *gin.Context) {
@@ -44,6 +55,16 @@ func InvoiceChat(c *gin.Context) {
 				return
 			}
 		}
+	}
+
+	// 第二阶段：启动自动填充服务，将收集到的内容作为参数
+	progressChan := make(chan string, 100)
+	go services.AutoFillingServiceStart(progressChan)
+
+	// 监听自动填充服务的进度
+	for progress := range progressChan {
+		c.Writer.WriteString("data: " + progress + "\n\n")
+		c.Writer.Flush()
 	}
 }
 func InvoiceList(c *gin.Context) {
