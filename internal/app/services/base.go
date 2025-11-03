@@ -12,6 +12,7 @@ var initOnce sync.Once
 
 var (
 	InvoiceFile IInvoiceFile
+	AutoFilling *AutoFillingService
 )
 
 func Init() {
@@ -20,6 +21,7 @@ func Init() {
 		NewChantClient(config.GetOpenaiConf().ApiKey)
 		//fmt.Println("=========prompt: ", config.GetOpenaiConf().Prompt)
 		InvoiceFile = NewInvoiceFileService()
+		AutoFilling = NewAutoFillingService()
 	})
 }
 

@@ -22,6 +22,39 @@ const (
 	ExpenseCategoryTravel        ExpenseCategory = "差旅费"
 )
 
+// 数据结构定义
+type CostItem struct {
+	Category   string
+	Name       string
+	Comment    string
+	Cost       string
+	BillNumber string
+}
+
+type BasicItem struct {
+	Category   string
+	Title      string
+	UrgentType string
+	Comment    string
+}
+
+type PayItem struct {
+	BusinessDept string
+	BudgetDept   string
+	PayDept      string
+	ProjectType  string
+	Project      string
+}
+
+type AutoFillingRequest struct {
+	BasicInfo BasicItem  `json:"basic_info"`
+	PayInfo   PayItem    `json:"pay_info"`
+	CostItems []CostItem `json:"cost_items"`
+	FilePaths []string   `json:"file_paths"`
+	Username  string     `json:"username"`
+	Password  string     `json:"password"`
+}
+
 type InvoiceFile struct {
 	ID              uint64          `gorm:"primaryKey;autoIncrement;comment:主键" json:"id"`
 	InvoiceType     string          `gorm:"size:100;default:null;comment:票据类型" json:"invoice_type"`

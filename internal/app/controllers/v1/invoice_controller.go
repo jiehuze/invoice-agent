@@ -3,27 +3,124 @@ package v1
 import (
 	"fmt"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 	"invoice-agent/internal/app/controllers"
+	"invoice-agent/internal/app/models"
 	"invoice-agent/internal/app/services"
 	"invoice-agent/internal/pkg/code"
 	"invoice-agent/pkg/util"
+	"time"
 )
 
-func InvoiceStart(c *gin.Context) {
-	// 设置响应头支持流式输出
-	c.Header("Content-Type", "text/event-stream; charset=utf-8")
-	c.Header("Cache-Control", "no-cache")
-	c.Header("Connection", "keep-alive")
+type AutoFillingController struct {
+	service *services.AutoFillingService
+}
 
-	progressChan := make(chan string, 100)
-	go services.AutoFillingServiceStart(progressChan)
-	// 监听自动填充服务的进度
-	for progress := range progressChan {
-		c.Writer.WriteString("AI执行: " + progress + "\n")
-		c.Writer.Flush()
+func NewAutoFillingController(service *services.AutoFillingService) *AutoFillingController {
+	return &AutoFillingController{service: service}
+}
+
+func (c *AutoFillingController) InvoiceStart(ctx *gin.Context) {
+	// 设置响应头支持流式输出
+	ctx.Header("Content-Type", "text/event-stream; charset=utf-8")
+	ctx.Header("Cache-Control", "no-cache")
+	ctx.Header("Connection", "keep-alive")
+
+	// 生成唯一任务ID
+	taskID := uuid.New().String()
+	basicItem := models.BasicItem{
+		Category:   "日常报销",
+		Title:      "主题xxxxxxxxxxxxxxxxx",
+		UrgentType: "紧急",
+		Comment:    "xxxxxxxxxxxxxxxxxxxxxxx项目出差",
 	}
-	//controllers.Response(c, code.Success, "success", nil)
+	payItem := models.PayItem{
+		BusinessDept: "智能业务部/智能业务部-IT外包项目",
+		BudgetDept:   "智能业务部/智能业务部-IT外包项目",
+		PayDept:      "天宇正清科技有限公司",
+		ProjectType:  "成本中心",
+		Project:      "成本中心",
+	}
+
+	autoFillingRequest := &models.AutoFillingRequest{
+		BasicInfo: basicItem,
+		PayInfo:   payItem,
+		Username:  "tyzq-wangmeng5",
+		Password:  "tyzq123456",
+	}
+	autoFillingRequest.FilePaths = append(autoFillingRequest.FilePaths, "invoice2.pdf")
+	autoFillingRequest.FilePaths = append(autoFillingRequest.FilePaths, "invoice3.pdf")
+	// 填写报销明细
+	item1 := models.CostItem{
+		Category:   "团建费",
+		Name:       "本部门团建",
+		Comment:    "费用说明xxxxxxxxxxxxxxxxxx",
+		Cost:       "1500",
+		BillNumber: "3",
+	}
+	item2 := models.CostItem{
+		Category:   "办公费",
+		Name:       "办公用电",
+		Comment:    "办公费用说明",
+		Cost:       "800",
+		BillNumber: "4",
+	}
+	autoFillingRequest.CostItems = append(autoFillingRequest.CostItems, item1)
+	autoFillingRequest.CostItems = append(autoFillingRequest.CostItems, item2)
+
+	err := c.service.StartAutoFilling(taskID, autoFillingRequest)
+	if err != nil {
+		controllers.Response(ctx, code.HTTPStatusErr, "自动填报失败", nil)
+		return
+	} // 获取进度通道
+	progressChan, exists := c.service.GetTaskProgressChan(taskID)
+	if !exists {
+		ctx.Writer.WriteString("错误: 无法获取任务进度通道\n")
+		ctx.Writer.Flush()
+		return
+	}
+	// 设置监听条件
+	timeout := time.After(30 * time.Minute) // 30分钟超时
+	clientGone := ctx.Request.Context().Done()
+
+	// 开始监听进度
+	ctx.Writer.WriteString("AI执行: 任务已启动，任务ID: " + taskID + "\n")
+	ctx.Writer.Flush()
+
+	// 监听自动填充服务的进度
+	for {
+		select {
+		case progress, ok := <-progressChan:
+			if !ok {
+				// 通道关闭，任务完成
+				ctx.Writer.WriteString("AI执行: 任务已完成\n")
+				ctx.Writer.Flush()
+				return
+			}
+			ctx.Writer.WriteString("AI执行: " + progress + "\n")
+			ctx.Writer.Flush()
+
+		case <-clientGone:
+			// 客户端断开连接
+			ctx.Writer.WriteString("AI执行: 客户端连接断开，任务已取消\n")
+			ctx.Writer.Flush()
+			//c.service.CancelTask(taskID)
+			return
+
+		case <-timeout:
+			// 超时
+			ctx.Writer.WriteString("AI执行: 任务执行超时，已取消\n")
+			ctx.Writer.Flush()
+			c.service.CancelTask(taskID)
+			return
+
+		case <-time.After(30 * time.Second):
+			// 心跳检测，保持连接活跃
+			ctx.Writer.WriteString("AI执行: 任务执行中...\n")
+			ctx.Writer.Flush()
+		}
+	}
 }
 
 func InvoiceChat(c *gin.Context) {
@@ -55,16 +152,6 @@ func InvoiceChat(c *gin.Context) {
 				return
 			}
 		}
-	}
-
-	// 第二阶段：启动自动填充服务，将收集到的内容作为参数
-	progressChan := make(chan string, 100)
-	go services.AutoFillingServiceStart(progressChan)
-
-	// 监听自动填充服务的进度
-	for progress := range progressChan {
-		c.Writer.WriteString("data: " + progress + "\n\n")
-		c.Writer.Flush()
 	}
 }
 func InvoiceList(c *gin.Context) {
