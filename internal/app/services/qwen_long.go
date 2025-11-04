@@ -6,6 +6,7 @@ import (
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 	"invoice-agent/pkg/config"
+	"strings"
 )
 
 type QwenLongClient struct {
@@ -60,12 +61,15 @@ func (p *QwenLongClient) ChatStream(ctx context.Context, fileIds []string) (<-ch
 		defer close(contentChan)
 		defer close(errorChan)
 
+		var fileids string
 		msg := make([]openai.ChatCompletionMessageParamUnion, 0)
 		msg = append(msg, openai.SystemMessage("You are a helpful assistant."))
 		for _, s := range fileIds {
 			msg = append(msg, openai.SystemMessage("fileid://"+s))
+			fileids += s + ","
 		}
-		msg = append(msg, openai.UserMessage(config.GetOpenaiConf().Prompt))
+		prompt := strings.Replace(config.GetOpenaiConf().Prompt, "{{file_ids}}", fileids, 1)
+		msg = append(msg, openai.UserMessage(prompt))
 
 		// 创建流式请求
 		stream := p.client.Chat.Completions.NewStreaming(ctx, openai.ChatCompletionNewParams{

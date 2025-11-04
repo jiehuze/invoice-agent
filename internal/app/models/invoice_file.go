@@ -55,6 +55,47 @@ type AutoFillingRequest struct {
 	Password  string     `json:"password"`
 }
 
+// ExpenseCategoryStats 费用类别统计结果
+type ExpenseCategoryStats struct {
+	CategoryName string        `json:"category_name"` // 费用类别名称
+	TotalAmount  float64       `json:"total_amount"`  // 该类别下发票类型的总金额
+	TicketCount  int           `json:"ticket_count"`  // 该类别下票据总数
+	Invoices     []InvoiceFile `json:"invoices"`      // 该类别下的所有票据
+}
+
+// StatByExpenseCategory 按费用类别统计发票文件
+func StatByExpenseCategory(invoices []InvoiceFile) map[string]*ExpenseCategoryStats {
+	stats := make(map[string]*ExpenseCategoryStats)
+
+	// 遍历所有发票文件
+	for _, invoice := range invoices {
+		category := string(invoice.ExpenseCategory)
+
+		// 如果该类别还没有统计信息，创建新的
+		if _, exists := stats[category]; !exists {
+			stats[category] = &ExpenseCategoryStats{
+				CategoryName: category,
+				TotalAmount:  0.0,
+				TicketCount:  0,
+				Invoices:     make([]InvoiceFile, 0),
+			}
+		}
+
+		// 累计票据数
+		stats[category].TicketCount++
+
+		// 如果是发票类型（service_type为1），累计金额
+		if invoice.ServiceType == ServiceTypeInvoice {
+			stats[category].TotalAmount += invoice.TotalAmount
+		}
+
+		// 添加票据到该类别下
+		stats[category].Invoices = append(stats[category].Invoices, invoice)
+	}
+
+	return stats
+}
+
 type InvoiceFile struct {
 	ID              uint64          `gorm:"primaryKey;autoIncrement;comment:主键" json:"id"`
 	InvoiceType     string          `gorm:"size:100;default:null;comment:票据类型" json:"invoice_type"`
@@ -72,6 +113,7 @@ type InvoiceFile struct {
 	ItemName        string          `gorm:"size:100;default:null;comment:项目名称" json:"item_name"`
 	ExpenseCategory ExpenseCategory `gorm:"size:100;default:null;comment:费用类别" json:"expense_category"`
 	FileName        string          `gorm:"size:500;not null;comment:原始文件名" json:"file_name"`
+	FilePath        string          `gorm:"size:1000;default:null;comment:文件路径" json:"file_path"` // 新增字段：记录文件路径
 	FileID          string          `gorm:"size:100;not null;uniqueIndex;comment:文件唯一ID" json:"file_id"`
 	CreatedAt       time.Time       `gorm:"type:datetime;not null;default:CURRENT_TIMESTAMP;comment:记录创建时间" json:"created_at"`
 	UpdatedAt       time.Time       `gorm:"type:datetime;not null;default:CURRENT_TIMESTAMP;comment:最后更新时间" json:"updated_at"`

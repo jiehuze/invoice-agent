@@ -1,6 +1,7 @@
 package v1
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -10,6 +11,7 @@ import (
 	"invoice-agent/internal/app/services"
 	"invoice-agent/internal/pkg/code"
 	"invoice-agent/pkg/util"
+	"strings"
 	"time"
 )
 
@@ -123,28 +125,56 @@ func (c *AutoFillingController) InvoiceStart(ctx *gin.Context) {
 	}
 }
 
-func InvoiceChat(c *gin.Context) {
+func (c *AutoFillingController) InvoiceChat(ctx *gin.Context) {
 	fileIds := make([]string, 0)
-	fileIds = append(fileIds, util.InvoiceFiles[10].FileID)
+	fileIds = append(fileIds, util.InvoiceFiles[9].FileID)
+	fileIds = append(fileIds, util.InvoiceFiles[13].FileID)
 	// 设置响应头支持流式输出
-	c.Header("Content-Type", "text/event-stream; charset=utf-8")
-	c.Header("Cache-Control", "no-cache")
-	c.Header("Connection", "keep-alive")
+	ctx.Header("Content-Type", "text/event-stream; charset=utf-8")
+	ctx.Header("Cache-Control", "no-cache")
+	ctx.Header("Connection", "keep-alive")
 
-	contentChan, errorChan := services.ChatClient.ChatStream(c.Request.Context(), fileIds)
-
+	contentChan, errorChan := services.ChatClient.ChatStream(ctx.Request.Context(), fileIds)
+	// 收集完整的流式数据
+	var fullContent strings.Builder
 	for {
 		select {
 		case content, ok := <-contentChan:
 			if !ok {
-				// 流结束
-				log.Info("------------流结束")
+				// 流结束，开始解析数据
+				log.Info("===== 流结束，开始解析数据")
+				// 获取完整内容
+				contentStr := fullContent.String()
+				var invoiceFiles []models.InvoiceFile
+				// 解析JSON数据
+				if err := json.Unmarshal([]byte(contentStr), &invoiceFiles); err != nil {
+					errorMsg := fmt.Sprintf("AI执行: JSON解析失败: %v\n\n", err)
+					ctx.Writer.WriteString(errorMsg)
+					ctx.Writer.Flush()
+					return
+				}
+				// 解析JSON数据
+
+				// 发送解析结果
+				resultMsg := fmt.Sprintf("AI执行: 解析成功，共解析%d条发票记录\n\n", len(invoiceFiles))
+				ctx.Writer.WriteString(resultMsg)
+
+				// 发送每条记录的详细信息
+				for i, invoice := range invoiceFiles {
+					detailMsg := fmt.Sprintf("AI执行: 发票%d: %s (%s) - %.2f元\n\n",
+						i+1, invoice.InvoiceType, invoice.InvoiceCode, invoice.TotalAmount)
+					ctx.Writer.WriteString(detailMsg)
+				}
+
+				ctx.Writer.Flush()
+				//services.InvoiceFile.CreateInvoiceFilesBatch(invoiceFiles)
 				return
 			}
 			// 实时处理内容
 			fmt.Print(content)
-			c.Writer.WriteString(content)
-			c.Writer.Flush()
+			fullContent.WriteString(content)
+			ctx.Writer.WriteString(content)
+			ctx.Writer.Flush()
 		case err, ok := <-errorChan:
 			if ok && err != nil {
 				// 处理错误

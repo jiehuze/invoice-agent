@@ -47,6 +47,19 @@ func (c *OpenAiFileClient) UploadFile(ctx context.Context, filePath, purpose str
 	return response.ID, nil
 }
 
+// UploadFileFromReader 直接从io.Reader上传文件
+func (c *OpenAiFileClient) UploadFileFromReader(ctx context.Context, reader io.Reader, filename, purpose string) (string, error) {
+	// 注意：OpenAI API可能需要文件名，如果API要求，可能需要使用multipart包装
+	response, err := c.client.Files.New(ctx, openai.FileNewParams{
+		Purpose: openai.FilePurpose(purpose),
+		File:    reader,
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to upload file: %w", err)
+	}
+	return response.ID, nil
+}
+
 // GetFile 获取文件信息
 func (c *OpenAiFileClient) GetFile(ctx context.Context, fileID string) (*openai.FileObject, error) {
 	file, err := c.client.Files.Get(ctx, fileID)

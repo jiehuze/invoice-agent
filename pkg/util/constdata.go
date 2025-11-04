@@ -58,4 +58,9 @@ var InvoiceFiles = []FileInfo{
 		FilePath: " /Users/jiehu/Downloads/invoice/tr/25119111389000881684-电子发票.pdf",
 		FileID:   "file-fe-b6cb47f339754e9a8f56d378",
 	},
+	{
+		FilePath: " /Users/jiehu/Downloads/invoice/tr/25119111389000881684-电子发票.pdf",
+		FileID:   "file-fe-dff72b9ea7e64e1799e797b2",
+		//file-fe-dff72b9ea7e64e1799e797b2.pdf
+	},
 }

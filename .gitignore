@@ -2,4 +2,5 @@ output/*
 .idea
 .idea/*
 invoice-agent
+uploads/
 .DS_Store

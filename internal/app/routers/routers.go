@@ -24,23 +24,25 @@ func SetUp() *gin.Engine {
 		mainGroup.GET("/health", controllers.Health)
 
 		mainGroup.GET("/info/list", v1.InvoiceList)
-		mainGroup.GET("/chat", v1.InvoiceChat)
 
 		controller := v1.NewInvoiceFileController(services.InvoiceFile)
 
 		invoiceFileGroup := mainGroup.Group("/files")
 		{
 			invoiceFileGroup.POST("/add", controller.CreateInvoiceFile)
+			invoiceFileGroup.POST("/batch", controller.CreateInvoiceFilesBatch)
 			invoiceFileGroup.GET("/list", controller.ListInvoiceFiles)
 			invoiceFileGroup.GET("/:id", controller.GetInvoiceFile)
 			invoiceFileGroup.PUT("/update/:id", controller.UpdateInvoiceFile)
 			invoiceFileGroup.DELETE("/:id", controller.DeleteInvoiceFile)
+			invoiceFileGroup.POST("/upload", controller.UploadInvoiceFile)
 		}
 
 		autoFillingController := v1.NewAutoFillingController(services.AutoFilling)
 		autoFillGroup := mainGroup.Group("/filling")
 		{
 			autoFillGroup.GET("/start", autoFillingController.InvoiceStart)
+			autoFillGroup.GET("/file", autoFillingController.InvoiceChat)
 		}
 	})
 

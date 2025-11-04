@@ -10,6 +10,7 @@ type IInvoiceFile interface {
 	CreateInvoiceFile(invoiceFile *models.InvoiceFile) error
 	CreateInvoiceFilesBatch(invoiceFiles []models.InvoiceFile) error
 	UpdateInvoiceFile(id uint64, invoiceFile *models.InvoiceFile) error
+	UpdateInvoiceFileByFileId(fileId string, invoiceFile *models.InvoiceFile) error
 	GetInvoiceFileByID(id uint64) (*models.InvoiceFile, error)
 	GetInvoiceFileByFileID(fileID string) (*models.InvoiceFile, error)
 	ListInvoiceFiles(limit, offset int) ([]models.InvoiceFile, error)
@@ -37,7 +38,9 @@ func (s *InvoiceFileService) CreateInvoiceFilesBatch(invoiceFiles []models.Invoi
 func (s *InvoiceFileService) UpdateInvoiceFile(id uint64, invoiceFile *models.InvoiceFile) error {
 	return s.repo.Update(id, invoiceFile)
 }
-
+func (s *InvoiceFileService) UpdateInvoiceFileByFileId(fileId string, invoiceFile *models.InvoiceFile) error {
+	return s.repo.UpdateByFileId(fileId, invoiceFile)
+}
 func (s *InvoiceFileService) GetInvoiceFileByID(id uint64) (*models.InvoiceFile, error) {
 	return s.repo.GetByID(id)
 }
