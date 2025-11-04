@@ -10,7 +10,6 @@ import (
 	"invoice-agent/internal/app/models"
 	"invoice-agent/internal/app/services"
 	"invoice-agent/internal/pkg/code"
-	"invoice-agent/pkg/util"
 	"strings"
 	"time"
 )
@@ -126,9 +125,19 @@ func (c *AutoFillingController) InvoiceStart(ctx *gin.Context) {
 }
 
 func (c *AutoFillingController) InvoiceChat(ctx *gin.Context) {
-	fileIds := make([]string, 0)
-	fileIds = append(fileIds, util.InvoiceFiles[9].FileID)
-	fileIds = append(fileIds, util.InvoiceFiles[13].FileID)
+	fileIdsStr := ctx.PostForm("file_ids")
+	if fileIdsStr == "" {
+		controllers.Response(ctx, code.HTTPStatusErr, "请上传发票文件", nil)
+		return
+	}
+	// 按逗号分割file_ids
+	fileIds := strings.Split(fileIdsStr, ",")
+	// 清理空格
+	for i, id := range fileIds {
+		fileIds[i] = strings.TrimSpace(id)
+	}
+	//获取上传的id
+
 	// 设置响应头支持流式输出
 	ctx.Header("Content-Type", "text/event-stream; charset=utf-8")
 	ctx.Header("Cache-Control", "no-cache")
@@ -153,10 +162,18 @@ func (c *AutoFillingController) InvoiceChat(ctx *gin.Context) {
 					ctx.Writer.Flush()
 					return
 				}
-				// 解析JSON数据
+
+				for _, invoiceFile := range invoiceFiles {
+					err := services.InvoiceFile.UpdateInvoiceFileByFileId(invoiceFile.FileID, &invoiceFile)
+					if err != nil {
+						errorMsg := fmt.Sprintf("AI执行: 更新发票文件失败: %v\n\n", err)
+						ctx.Writer.WriteString(errorMsg)
+						ctx.Writer.Flush()
+					}
+				}
 
 				// 发送解析结果
-				resultMsg := fmt.Sprintf("AI执行: 解析成功，共解析%d条发票记录\n\n", len(invoiceFiles))
+				resultMsg := fmt.Sprintf("AI执行: 共解析%d条发票记录\n\n", len(invoiceFiles))
 				ctx.Writer.WriteString(resultMsg)
 
 				// 发送每条记录的详细信息
@@ -167,7 +184,7 @@ func (c *AutoFillingController) InvoiceChat(ctx *gin.Context) {
 				}
 
 				ctx.Writer.Flush()
-				//services.InvoiceFile.CreateInvoiceFilesBatch(invoiceFiles)
+
 				return
 			}
 			// 实时处理内容
@@ -183,8 +200,4 @@ func (c *AutoFillingController) InvoiceChat(ctx *gin.Context) {
 			}
 		}
 	}
-}
-func InvoiceList(c *gin.Context) {
-
-	controllers.Response(c, code.Success, "success", nil)
 }

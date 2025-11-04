@@ -97,9 +97,11 @@ func (c *InvoiceFileController) GetInvoiceFile(ctx *gin.Context) {
 func (c *InvoiceFileController) ListInvoiceFiles(ctx *gin.Context) {
 	limit, _ := strconv.Atoi(ctx.DefaultQuery("limit", "10"))
 	offset, _ := strconv.Atoi(ctx.DefaultQuery("offset", "0"))
-	documentNumber := ctx.Query("document_number")
+	serviceType, _ := strconv.Atoi(ctx.DefaultQuery("service_type", "1"))
+	sessionId := ctx.Query("session_id")
 	invoiceFile := models.InvoiceFile{
-		DocumentNumber: documentNumber,
+		SessionId:   sessionId,
+		ServiceType: models.ServiceType(serviceType),
 	}
 
 	invoiceFiles, err := c.invoiceFileService.ListInvoiceFilesByCont(invoiceFile, limit, offset)

@@ -180,8 +180,8 @@ func (r *InvoiceFileRepository) ListByCont(invoice models.InvoiceFile, limit, of
 	if invoice.InvoiceCode != "" {
 		db = db.Where("invoice_code = ?", invoice.InvoiceCode)
 	}
-	if invoice.DocumentNumber != "" {
-		db = db.Where("document_number = ?", invoice.DocumentNumber)
+	if invoice.SessionId != "" {
+		db = db.Where("session_id = ?", invoice.SessionId)
 	}
 	if invoice.FileName != "" {
 		db = db.Where("file_name = ?", invoice.FileName)
@@ -203,6 +203,11 @@ func (r *InvoiceFileRepository) ListByCont(invoice models.InvoiceFile, limit, of
 	}
 	if invoice.ExpenseCategory != "" {
 		db = db.Where("expense_category = ?", invoice.ExpenseCategory)
+	}
+	if invoice.ServiceType == 0 {
+		db = db.Where("service_type = ?", 0)
+	} else {
+		db = db.Where("service_type != ?", 0)
 	}
 
 	err := db.Limit(limit).Offset(offset).Find(&invoiceFiles).Error

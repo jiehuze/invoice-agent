@@ -23,7 +23,6 @@ func SetUp() *gin.Engine {
 		mainGroup := g.Group("/invoice/")
 		mainGroup.GET("/health", controllers.Health)
 
-		mainGroup.GET("/info/list", v1.InvoiceList)
 		chatGroup := mainGroup.Group("/chat")
 		{
 			controller := v1.NewInvoiceChatController(services.ChatClient)
