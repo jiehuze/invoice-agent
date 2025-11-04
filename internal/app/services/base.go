@@ -18,7 +18,7 @@ var (
 func Init() {
 	initOnce.Do(func() {
 		NewOpenAIClient(config.GetOpenaiConf().ApiKey)
-		NewChantClient(config.GetOpenaiConf().ApiKey)
+		NewChatClient(config.GetOpenaiConf().ApiKey)
 		//fmt.Println("=========prompt: ", config.GetOpenaiConf().Prompt)
 		InvoiceFile = NewInvoiceFileService()
 		AutoFilling = NewAutoFillingService()

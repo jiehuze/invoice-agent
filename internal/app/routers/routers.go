@@ -24,11 +24,15 @@ func SetUp() *gin.Engine {
 		mainGroup.GET("/health", controllers.Health)
 
 		mainGroup.GET("/info/list", v1.InvoiceList)
-
-		controller := v1.NewInvoiceFileController(services.InvoiceFile)
+		chatGroup := mainGroup.Group("/chat")
+		{
+			controller := v1.NewInvoiceChatController(services.ChatClient)
+			chatGroup.POST("/:id", controller.Chat)
+		}
 
 		invoiceFileGroup := mainGroup.Group("/files")
 		{
+			controller := v1.NewInvoiceFileController(services.InvoiceFile)
 			invoiceFileGroup.POST("/add", controller.CreateInvoiceFile)
 			invoiceFileGroup.POST("/batch", controller.CreateInvoiceFilesBatch)
 			invoiceFileGroup.GET("/list", controller.ListInvoiceFiles)
@@ -38,9 +42,9 @@ func SetUp() *gin.Engine {
 			invoiceFileGroup.POST("/upload", controller.UploadInvoiceFile)
 		}
 
-		autoFillingController := v1.NewAutoFillingController(services.AutoFilling)
 		autoFillGroup := mainGroup.Group("/filling")
 		{
+			autoFillingController := v1.NewAutoFillingController(services.AutoFilling)
 			autoFillGroup.GET("/start", autoFillingController.InvoiceStart)
 			autoFillGroup.GET("/file", autoFillingController.InvoiceChat)
 		}
