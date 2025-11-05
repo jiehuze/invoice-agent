@@ -48,12 +48,14 @@ type PayItem struct {
 }
 
 type AutoFillingRequest struct {
-	SessionId string      `json:"session_id"`
-	BasicInfo BasicItem   `json:"basic_info"`
-	PayInfo   PayItem     `json:"pay_info"`
-	CostItems *[]CostItem `json:"cost_items"`
-	Username  string      `json:"username"`
-	Password  string      `json:"password"`
+	SessionId    string      `json:"session_id"`
+	BasicInfo    BasicItem   `json:"basic_info"`
+	PayInfo      PayItem     `json:"pay_info"`
+	CostItems    *[]CostItem `json:"cost_items"`
+	Username     string      `json:"username"`
+	Password     string      `json:"password"`
+	InvoiceFiles []string    `json:"invoice_files"`
+	OtherFiles   []string    `json:"other_files"`
 }
 
 // ExpenseCategoryStats 费用类别统计结果
@@ -62,6 +64,24 @@ type ExpenseCategoryStats struct {
 	TotalAmount  float64       `json:"total_amount"`  // 该类别下发票类型的总金额
 	TicketCount  int           `json:"ticket_count"`  // 该类别下票据总数
 	Invoices     []InvoiceFile `json:"invoices"`      // 该类别下的所有票据
+}
+
+// 整理发票和非发票文件
+func CollateFile(files []InvoiceFile, autoFillingRequest *AutoFillingRequest) error {
+	invoiceFiles := make([]string, 0)
+	otherFiles := make([]string, 0)
+	for _, invoice := range files {
+		if invoice.ServiceType == ServiceTypeInvoice {
+			invoiceFiles = append(invoiceFiles, invoice.FilePath)
+		} else {
+			otherFiles = append(otherFiles, invoice.FilePath)
+		}
+	}
+
+	autoFillingRequest.InvoiceFiles = invoiceFiles
+	autoFillingRequest.OtherFiles = otherFiles
+
+	return nil
 }
 
 // StatByExpenseCategory 按费用类别统计发票文件

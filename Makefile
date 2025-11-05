@@ -23,6 +23,7 @@ all: clean $(APP) tarball
 $(APP):
 	@echo "building $(APP) ..."
 	GOOS=$(OS) GOARCH=amd64 go build $(LDFLAGS) -o $(OUT_PATH)/$(APP)  main.go
+	#GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o $(OUT_PATH)/$(APP)  main.go
 
 tarball:
 	cp -rf conf $(OUT_PATH)/
@@ -30,7 +31,7 @@ tarball:
 
 clean:
 	rm -rf $(APP)
-	rm -rf output/*
+	rm -rf $(OUT_PATH)/*
 
 docker: docker-build
 

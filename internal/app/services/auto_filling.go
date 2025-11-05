@@ -156,8 +156,10 @@ func (s *AutoFillingService) executeTask(taskID string, instance *AutoFillingIns
 	s.tasks.Store(taskID, taskInfo)
 
 	// 执行填报流程
+	log.Infoln("12---: ")
 	err := s.runAutoFilling(instance, taskInfo)
 	if err != nil {
+		log.Infoln("13---: ", err.Error())
 		taskInfo.Status = TaskStatusFailed
 		taskInfo.Error = err.Error()
 	} else {
@@ -195,9 +197,44 @@ func (s *AutoFillingService) cleanupInstance(instance *AutoFillingInstance) {
 	//close(instance.progress)
 }
 
+func (s *AutoFillingService) Runtest() error {
+	log.Infoln("------ Runtest running .....")
+	//if err := s.ensurePlaywrightInstalled(); err != nil {
+	//	return fmt.Errorf("Playwright 初始化失败: %w", err)
+	//}
+	log.Infoln("------ Runtest running start")
+	// 启动 Playwright
+	pw, err := playwright.Run()
+	if err != nil {
+		return fmt.Errorf("启动 Playwright 失败: %w", err)
+	}
+	log.Infoln("-------Runtest Run")
+
+	browser, err := pw.Chromium.Launch(playwright.BrowserTypeLaunchOptions{
+		Headless: playwright.Bool(true),
+	})
+	if err != nil {
+		return fmt.Errorf("启动浏览器失败: %w", err)
+	}
+	log.Infoln("启动浏览器成功")
+	// 创建浏览器上下文
+	context, err := browser.NewContext()
+	if err != nil {
+		return fmt.Errorf("创建浏览器上下文失败: %w", err)
+	}
+	// 创建页面
+	_, err = context.NewPage()
+	if err != nil {
+		return fmt.Errorf("创建页面失败: %w", err)
+	}
+	return nil
+}
+
 // 核心执行逻辑
 func (s *AutoFillingService) runAutoFilling(instance *AutoFillingInstance, taskInfo *TaskInfo) error {
+	log.Infoln("runAutoFilling running .....")
 	// 确保 Playwright 已安装
+	log.Infoln("runAutoFilling need install browser .....")
 	if err := s.ensurePlaywrightInstalled(); err != nil {
 		return fmt.Errorf("Playwright 初始化失败: %w", err)
 	}
@@ -215,7 +252,7 @@ func (s *AutoFillingService) runAutoFilling(instance *AutoFillingInstance, taskI
 
 	// 启动浏览器
 	browser, err := pw.Chromium.Launch(playwright.BrowserTypeLaunchOptions{
-		Headless: playwright.Bool(false),
+		Headless: playwright.Bool(true),
 	})
 	if err != nil {
 		return fmt.Errorf("启动浏览器失败: %w", err)
@@ -308,11 +345,11 @@ func (s *AutoFillingService) executeFillingProcess(instance *AutoFillingInstance
 	}
 	s.sendProgress(taskInfo, "上传发票...")
 	//todo
-	//for _, filePath := range instance.request.FilePaths {
-	//	if err := s.handleVatInvoiceUpload(instance, taskInfo, filePath); err != nil {
-	//		return fmt.Errorf("上传发票失败: %w", err)
-	//	}
-	//}
+	for _, filePath := range instance.request.InvoiceFiles {
+		if err := s.handleVatInvoiceUpload(instance, taskInfo, filePath); err != nil {
+			return fmt.Errorf("上传发票失败: %w", err)
+		}
+	}
 
 	if err := s.handleWheelDown(instance, 0, -500); err != nil {
 		return fmt.Errorf("滚动失败: %w", err)
@@ -571,31 +608,28 @@ func (s *AutoFillingService) handleReimbursePayInfo(instance *AutoFillingInstanc
 	s.sendProgress(taskInfo, "设置业务发生部门: "+instance.request.PayInfo.BusinessDept)
 	if err := s.handleBusinessDept(instance, taskInfo); err != nil {
 		s.sendProgress(taskInfo, fmt.Sprintf("设置业务发生部门失败: %v", err))
-		return fmt.Errorf("设置业务发生部门失败: %w", err)
 	}
 
 	// 设置预算承担部门
 	s.sendProgress(taskInfo, "设置预算承担部门: "+instance.request.PayInfo.BudgetDept)
 	if err := s.handleBudgetDept(instance, taskInfo); err != nil {
 		s.sendProgress(taskInfo, fmt.Sprintf("设置预算承担部门失败: %v", err))
-		return fmt.Errorf("设置预算承担部门失败: %w", err)
 	}
 
 	// 设置费用归集项目
 	s.sendProgress(taskInfo, "设置费用归集项目: "+instance.request.PayInfo.ProjectType)
 	if err := s.handleProjectType(instance, taskInfo); err != nil {
 		s.sendProgress(taskInfo, fmt.Sprintf("设置项目类型失败: %v", err))
-		return fmt.Errorf("设置项目类型失败: %w", err)
 	}
-	//if err := handleProject(page, payItem.Project); err != nil {
-	//	return fmt.Errorf("设置项目失败: %w", err)
-	//}
+	//设置项目
+	if err := s.handleProject(instance, taskInfo); err != nil {
+		s.sendProgress(taskInfo, fmt.Sprintf("设置项目: %v", err))
+	}
 
 	// 设置付款公司
 	s.sendProgress(taskInfo, "设置付款公司: "+instance.request.PayInfo.PayDept)
 	if err := s.handlePayDept(instance, taskInfo); err != nil {
 		s.sendProgress(taskInfo, fmt.Sprintf("设置付款部门失败: %v", err))
-		return fmt.Errorf("设置付款部门失败: %w", err)
 	}
 
 	time.Sleep(DelayShort)
@@ -607,7 +641,6 @@ func (s *AutoFillingService) selectDropdownItem(instance *AutoFillingInstance, t
 	allLiElements := instance.page.Locator(".el-select-dropdown__item")
 	count, err := allLiElements.Count()
 	if err != nil {
-		s.sendProgress(taskInfo, "获取下拉选项数量失败")
 		s.sendProgress(taskInfo, fmt.Sprintf("%v获取下拉选项数量失败", desc))
 		return fmt.Errorf("获取下拉选项数量失败: %w", err)
 	}
@@ -703,32 +736,8 @@ func (s *AutoFillingService) handleBudgetDept(instance *AutoFillingInstance, tas
 	}
 
 	time.Sleep(DelayShort)
+	_ = s.selectDropdownItem(instance, taskInfo, instance.request.PayInfo.BudgetDept, "预算承担部门")
 
-	allLiElements := instance.page.Locator(".el-select-dropdown__item")
-	count, err := allLiElements.Count()
-	if err != nil {
-		return fmt.Errorf("获取下拉选项数量失败: %w", err)
-	}
-
-	for i := 0; i < count; i++ {
-		liElement := allLiElements.Nth(i)
-		visible, err := liElement.IsVisible()
-		if err != nil {
-			continue
-		}
-		if visible {
-			textLocator := liElement.GetByText(instance.request.PayInfo.BudgetDept)
-			if textCount, _ := textLocator.Count(); textCount > 0 {
-				if err := textLocator.Click(); err != nil {
-					return fmt.Errorf("选择预算承担部门失败: %w", err)
-				}
-				break
-			}
-		}
-	}
-
-	time.Sleep(DelayShort)
-	s.sendProgress(taskInfo, "设置预算承担部门完成")
 	return nil
 }
 
@@ -740,72 +749,22 @@ func (s *AutoFillingService) handleProjectType(instance *AutoFillingInstance, ta
 	}
 
 	time.Sleep(DelayShort)
+	_ = s.selectDropdownItem(instance, taskInfo, instance.request.PayInfo.ProjectType, "项目类型")
 
-	allLiElements := instance.page.Locator(".el-select-dropdown__item")
-	count, err := allLiElements.Count()
-	if err != nil {
-		return fmt.Errorf("获取下拉选项数量失败: %w", err)
-	}
-
-	for i := 0; i < count; i++ {
-		liElement := allLiElements.Nth(i)
-		visible, err := liElement.IsVisible()
-		if err != nil {
-			continue
-		}
-		if visible {
-			textLocator := liElement.GetByText(instance.request.PayInfo.ProjectType)
-			if textCount, _ := textLocator.Count(); textCount > 0 {
-				if err := textLocator.Click(); err != nil {
-					return fmt.Errorf("选择项目类型失败: %w", err)
-				}
-				break
-			}
-		}
-	}
-
-	time.Sleep(DelayShort)
-	s.sendProgress(taskInfo, "设置项目类型完成")
 	return nil
 }
 
-func (s *AutoFillingService) handleProject(instance *AutoFillingInstance, taskInfo *TaskInfo, project string) error {
+func (s *AutoFillingService) handleProject(instance *AutoFillingInstance, taskInfo *TaskInfo) error {
 	s.sendProgress(taskInfo, "设置项目...")
 	dialog := instance.page.GetByRole("dialog", playwright.PageGetByRoleOptions{Name: "dialog"})
-	if err := dialog.Locator("[placeholder=\"请选择项目\"]").Click(); err != nil {
+	if err := dialog.Locator("[placeholder=\"请选择项目/成本中心\"]").Click(); err != nil {
 		s.sendProgress(taskInfo, fmt.Sprintf("点击项目下拉框失败: %v", err))
 		return fmt.Errorf("点击项目下拉框失败: %w", err)
 	}
 
 	time.Sleep(DelayShort)
+	_ = s.selectDropdownItem(instance, taskInfo, instance.request.PayInfo.Project, "项目")
 
-	allLiElements := instance.page.Locator(".el-select-dropdown__item")
-	count, err := allLiElements.Count()
-	if err != nil {
-		s.sendProgress(taskInfo, fmt.Sprintf("获取下拉选项数量失败: %v", err))
-		return fmt.Errorf("获取下拉选项数量失败: %w", err)
-	}
-
-	for i := 0; i < count; i++ {
-		liElement := allLiElements.Nth(i)
-		visible, err := liElement.IsVisible()
-		if err != nil {
-			continue
-		}
-		if visible {
-			textLocator := liElement.GetByText(project)
-			if textCount, _ := textLocator.Count(); textCount > 0 {
-				if err := textLocator.Click(); err != nil {
-					s.sendProgress(taskInfo, fmt.Sprintf("选择项目失败: %v", err))
-					return fmt.Errorf("选择项目失败: %w", err)
-				}
-				break
-			}
-		}
-	}
-
-	time.Sleep(DelayShort)
-	s.sendProgress(taskInfo, "设置项目完成")
 	return nil
 }
 
@@ -818,34 +777,8 @@ func (s *AutoFillingService) handlePayDept(instance *AutoFillingInstance, taskIn
 	}
 
 	time.Sleep(DelayShort)
+	_ = s.selectDropdownItem(instance, taskInfo, instance.request.PayInfo.PayDept, "付款公司")
 
-	allLiElements := instance.page.Locator(".el-select-dropdown__item")
-	count, err := allLiElements.Count()
-	if err != nil {
-		s.sendProgress(taskInfo, fmt.Sprintf("获取下拉选项数量失败: %v", err))
-		return fmt.Errorf("获取下拉选项数量失败: %w", err)
-	}
-
-	for i := 0; i < count; i++ {
-		liElement := allLiElements.Nth(i)
-		visible, err := liElement.IsVisible()
-		if err != nil {
-			continue
-		}
-		if visible {
-			textLocator := liElement.GetByText(instance.request.PayInfo.PayDept)
-			if textCount, _ := textLocator.Count(); textCount > 0 {
-				if err := textLocator.Click(); err != nil {
-					s.sendProgress(taskInfo, fmt.Sprintf("选择付款公司失败: %v", err))
-					return fmt.Errorf("选择付款公司失败: %w", err)
-				}
-				break
-			}
-		}
-	}
-
-	time.Sleep(DelayShort)
-	s.sendProgress(taskInfo, "设置付款部门完成")
 	return nil
 }
 
@@ -976,31 +909,8 @@ func (s *AutoFillingService) handleCostNameInDetail(instance *AutoFillingInstanc
 	}
 
 	time.Sleep(DelayShort)
+	_ = s.selectDropdownItem(instance, taskInfo, costName, "费用名称")
 
-	allNameItems := instance.page.GetByText(costName)
-	count, err := allNameItems.Count()
-	if err != nil {
-		s.sendProgress(taskInfo, fmt.Sprintf("获取费用名称选项数量失败: %v", err))
-		return fmt.Errorf("获取费用名称选项数量失败: %w", err)
-	}
-
-	for i := 0; i < count; i++ {
-		nameItem := allNameItems.Nth(i)
-		visible, err := nameItem.IsVisible()
-		if err != nil {
-			continue
-		}
-		if visible {
-			if err := nameItem.Click(); err != nil {
-				s.sendProgress(taskInfo, fmt.Sprintf("选择费用名称失败: %v", err))
-				return fmt.Errorf("选择费用名称失败: %w", err)
-			}
-			break
-		}
-	}
-
-	time.Sleep(DelayShort)
-	s.sendProgress(taskInfo, "费用名称设置完成")
 	return nil
 }
 

@@ -152,6 +152,22 @@ func (c *InvoiceFileController) GetInvoiceFileInExpensive(ctx *gin.Context) {
 	controllers.Response(ctx, http.StatusOK, "获取成功", category)
 }
 
+func (c *InvoiceFileController) DeleteUploadedInvoiceFile(ctx *gin.Context) {
+	fileIdsStr := ctx.PostForm("file_ids")
+	if fileIdsStr == "" {
+		controllers.Response(ctx, code.HTTPStatusErr, "请上传发票文件", nil)
+		return
+	}
+	// 按逗号分割file_ids
+	fileIds := strings.Split(fileIdsStr, ",")
+	// 清理空格
+	for _, id := range fileIds {
+		services.FileClient.DeleteFile(ctx.Request.Context(), strings.TrimSpace(id))
+	}
+
+	controllers.Response(ctx, http.StatusOK, "删除成功", nil)
+}
+
 // / UploadInvoiceFileDirect 先保存文件到本地，然后上传到OpenAI
 func (c *InvoiceFileController) UploadInvoiceFile(ctx *gin.Context) {
 	// 获取上传的文件
@@ -165,7 +181,7 @@ func (c *InvoiceFileController) UploadInvoiceFile(ctx *gin.Context) {
 	timestampDir := time.Now().Format("20060102150405")
 
 	// 创建目录路径
-	dirPath := filepath.Join("uploads", timestampDir)
+	dirPath := filepath.Join("/app/logs/uploads", timestampDir)
 	if err := os.MkdirAll(dirPath, os.ModePerm); err != nil {
 		controllers.Response(ctx, http.StatusInternalServerError, "创建本地目录失败", err)
 		return
@@ -235,7 +251,7 @@ func (c *InvoiceFileController) FileParseChat(ctx *gin.Context) {
 	ctx.Header("Cache-Control", "no-cache")
 	ctx.Header("Connection", "keep-alive")
 
-	contentChan, errorChan := services.ChatClient.ChatStream(ctx.Request.Context(), fileIds)
+	contentChan, errorChan := services.ChatClient.FileParseStream(ctx.Request.Context(), fileIds)
 	// 收集完整的流式数据
 	var fullContent strings.Builder
 	for {
@@ -249,8 +265,8 @@ func (c *InvoiceFileController) FileParseChat(ctx *gin.Context) {
 				var invoiceFiles []models.InvoiceFile
 				// 解析JSON数据
 				if err := json.Unmarshal([]byte(contentStr), &invoiceFiles); err != nil {
-					errorMsg := fmt.Sprintf("AI执行: JSON解析失败: %v\n\n", err)
-					ctx.Writer.WriteString(errorMsg)
+					errorMsg := fmt.Sprintf("AI助手: JSON解析失败: %v\n\n", err)
+					_, _ = ctx.Writer.WriteString(errorMsg)
 					ctx.Writer.Flush()
 					return
 				}
@@ -262,7 +278,7 @@ func (c *InvoiceFileController) FileParseChat(ctx *gin.Context) {
 					}
 					//去重出去，重复的数据要进行删除
 					files, _ := services.InvoiceFile.ListInvoiceFilesByCont(tmp, 10, 0)
-					if files != nil && len(files) > 0 {
+					if files != nil && len(files) > 1 {
 						for _, file := range files {
 							if file.InvoiceCode == "" {
 								services.InvoiceFile.DeleteInvoiceFile(file.ID)
@@ -273,31 +289,30 @@ func (c *InvoiceFileController) FileParseChat(ctx *gin.Context) {
 
 					err := services.InvoiceFile.UpdateInvoiceFileByFileId(invoiceFile.FileID, &invoiceFile)
 					if err != nil {
-						errorMsg := fmt.Sprintf("AI执行: 更新发票文件失败: %v\n\n", err)
-						ctx.Writer.WriteString(errorMsg)
+						errorMsg := fmt.Sprintf("AI助手: 更新发票文件失败: %v\n\n", err)
+						_, _ = ctx.Writer.WriteString(errorMsg)
 						ctx.Writer.Flush()
 					}
 				}
 
 				// 发送解析结果
-				resultMsg := fmt.Sprintf("AI执行: 共解析%d条发票记录\n\n", len(invoiceFiles))
-				ctx.Writer.WriteString(resultMsg)
+				resultMsg := fmt.Sprintf("AI助手: 共解析%d条发票记录\n\n", len(invoiceFiles))
+				_, _ = ctx.Writer.WriteString(resultMsg)
 
 				// 发送每条记录的详细信息
 				for i, invoice := range invoiceFiles {
-					detailMsg := fmt.Sprintf("AI执行: 发票%d: %s (%s) - %.2f元\n\n",
+					detailMsg := fmt.Sprintf("AI助手: 发票%d: %s (%s) - %.2f元\n\n",
 						i+1, invoice.InvoiceType, invoice.InvoiceCode, invoice.TotalAmount)
-					ctx.Writer.WriteString(detailMsg)
+					_, _ = ctx.Writer.WriteString(detailMsg)
 				}
 
 				ctx.Writer.Flush()
-
 				return
 			}
 			// 实时处理内容
 			fmt.Print(content)
 			fullContent.WriteString(content)
-			ctx.Writer.WriteString(content)
+			_, _ = ctx.Writer.WriteString(content)
 			ctx.Writer.Flush()
 		case err, ok := <-errorChan:
 			if ok && err != nil {

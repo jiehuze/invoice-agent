@@ -8,8 +8,8 @@ import (
 	"invoice-agent/internal/app/controllers"
 	"invoice-agent/internal/app/models"
 	"invoice-agent/internal/app/services"
-	"invoice-agent/internal/pkg/code"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -28,20 +28,42 @@ func (c *InvoiceChatController) Chat(ctx *gin.Context) {
 		return
 	}
 
-	chat, err := services.ChatClient.Chat(ctx, req)
-	if err != nil {
-		controllers.Response(ctx, http.StatusInternalServerError, "自动填开发票失败", gin.H{})
-		return
-	}
+	// 设置响应头支持流式输出
+	ctx.Header("Content-Type", "text/event-stream; charset=utf-8")
+	ctx.Header("Cache-Control", "no-cache")
+	ctx.Header("Connection", "keep-alive")
 
-	log.Infoln("提取的信息为：\n", *chat)
-	//所有信息收集完成，开始进行数据解析和填报发票单流程
-	if req.Parse {
-		c.fillingStart(ctx, &req, chat)
-		return
+	contentChan, errorChan := services.ChatClient.ChatStream(ctx, req)
+	var fullContent strings.Builder
+	for {
+		select {
+		case content, ok := <-contentChan:
+			if !ok {
+				// 流结束，开始解析数据
+				log.Info("===== 流结束，开始解析数据")
+				// 获取完整内容
+				contentStr := fullContent.String()
+				log.Infoln("提取的信息为：\n", contentStr)
+				//所有信息收集完成，开始进行数据解析和填报发票单流程
+				if req.Parse {
+					c.fillingStart(ctx, &req, &contentStr)
+				}
+				return
+			}
+			// 实时处理内容
+			fmt.Print(content)
+			fullContent.WriteString(content)
+			ctx.Writer.WriteString(content)
+			ctx.Writer.Flush()
+		case err, ok := <-errorChan:
+			if ok && err != nil {
+				// 处理错误
+				fmt.Printf("Error: %v\n", err)
+				return
+			}
+		}
 	}
-
-	controllers.Response(ctx, http.StatusOK, "开始自动填开发票", *chat)
+	//controllers.Response(ctx, http.StatusOK, "开始自动填开发票", *chat)
 }
 
 func (c *InvoiceChatController) fillingStart(ctx *gin.Context, req *models.ChatRequest, chat *string) {
@@ -65,15 +87,22 @@ func (c *InvoiceChatController) fillingStart(ctx *gin.Context, req *models.ChatR
 	autoFillingRequest.Username = "tyzq-wangmeng5"
 	autoFillingRequest.Password = "tyzq123456"
 	autoFillingRequest.CostItems = models.StatByExpenseCategory(files)
-
+	_ = models.CollateFile(files, &autoFillingRequest)
+	//controllers.Response(ctx, http.StatusOK, "开始自动填开发票", autoFillingRequest)
+	//return
+	log.Infoln("1---: ", autoFillingRequest)
 	err = services.AutoFilling.StartAutoFilling(autoFillingRequest.SessionId, &autoFillingRequest)
 	if err != nil {
-		controllers.Response(ctx, code.HTTPStatusErr, "自动填报失败", nil)
+		log.Infoln("2---: ")
+		_, _ = ctx.Writer.WriteString("AI助手: 误差为你启动助手\n")
+		ctx.Writer.Flush()
 		return
 	} // 获取进度通道
+	log.Infoln("3---: ")
+
 	progressChan, exists := services.AutoFilling.GetTaskProgressChan(autoFillingRequest.SessionId)
 	if !exists {
-		ctx.Writer.WriteString("错误: 无法获取任务进度通道\n")
+		_, _ = ctx.Writer.WriteString("AI助手: 无法获取任务进度通道\n")
 		ctx.Writer.Flush()
 		return
 	}
@@ -82,7 +111,7 @@ func (c *InvoiceChatController) fillingStart(ctx *gin.Context, req *models.ChatR
 	clientGone := ctx.Request.Context().Done()
 
 	// 开始监听进度
-	ctx.Writer.WriteString("AI执行: 任务已启动，任务ID: " + autoFillingRequest.SessionId + "\n")
+	_, _ = ctx.Writer.WriteString("AI助手: 任务已启动，任务ID: " + autoFillingRequest.SessionId + "\n")
 	ctx.Writer.Flush()
 
 	// 监听自动填充服务的进度
@@ -91,30 +120,30 @@ func (c *InvoiceChatController) fillingStart(ctx *gin.Context, req *models.ChatR
 		case progress, ok := <-progressChan:
 			if !ok {
 				// 通道关闭，任务完成
-				ctx.Writer.WriteString("AI执行: 任务已完成\n")
+				_, _ = ctx.Writer.WriteString("AI助手: 任务已完成\n")
 				ctx.Writer.Flush()
 				return
 			}
-			ctx.Writer.WriteString("AI执行: " + progress + "\n")
+			_, _ = ctx.Writer.WriteString("AI助手: " + progress + "\n")
 			ctx.Writer.Flush()
 
 		case <-clientGone:
 			// 客户端断开连接
-			ctx.Writer.WriteString("AI执行: 客户端连接断开，任务已取消\n")
+			_, _ = ctx.Writer.WriteString("AI助手: 客户端连接断开，任务已取消\n")
 			ctx.Writer.Flush()
 			//c.service.CancelTask(taskID)
 			return
 
 		case <-timeout:
 			// 超时
-			ctx.Writer.WriteString("AI执行: 任务执行超时，已取消\n")
+			_, _ = ctx.Writer.WriteString("AI助手: 任务执行超时，已取消\n")
 			ctx.Writer.Flush()
 			services.AutoFilling.CancelTask(autoFillingRequest.SessionId)
 			return
 
 		case <-time.After(30 * time.Second):
 			// 心跳检测，保持连接活跃
-			ctx.Writer.WriteString("AI执行: 任务执行中...\n")
+			_, _ = ctx.Writer.WriteString("AI助手: 任务执行中...\n")
 			ctx.Writer.Flush()
 		}
 	}
