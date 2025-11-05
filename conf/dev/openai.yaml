@@ -1,5 +1,28 @@
 apikey: sk-53c16d78894b4559a95ce5fbea3822cc
 model: qwen-long
+parse_prompt: |
+  识别用户提供的数据，严格按照输出格式进行输出，确保字段类型和格式正确：
+  【用户提供的数据】
+  {{input_question}}
+  【输出格式要求】
+  请严格输出以下JSON结构，确保字段类型和格式正确：
+  {
+      "basic_info": {
+          "Category": "字符串 | 报销类型",
+          "Title": "字符串 | 主题",
+          "UrgentType": "字符串 | 紧急程度",
+          "Comment": "字符串 | 用途/说明"
+      },
+      "pay_info": {
+          "BusinessDept": "字符串 | 业务发生部门",
+          "BudgetDept": "字符串 | 预算承德部门",
+          "PayDept": "字符串 | 付款公司",
+          "ProjectType": "字符串 | 费用归集项目",
+          "Project": "字符串 | 费用归集项目下的子项"
+      }
+  }
+  
+
 chat_prompt: |
   你是一个语义分析助手，根据输入的描述信息，进行分析：
   【已分析信息】

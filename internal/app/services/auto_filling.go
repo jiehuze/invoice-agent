@@ -4,6 +4,7 @@ import (
 	"fmt"
 	log "github.com/sirupsen/logrus"
 	"invoice-agent/internal/app/models"
+	"strings"
 	"sync"
 	"time"
 
@@ -289,13 +290,13 @@ func (s *AutoFillingService) executeFillingProcess(instance *AutoFillingInstance
 
 	// 填写报销明细
 	s.sendProgress(taskInfo, "填写报销明细...")
-	for i := 0; i < len(instance.request.CostItems); i++ {
+	for i := 0; i < len(*instance.request.CostItems); i++ {
 		if err := s.handleAddDetail(instance, taskInfo); err != nil {
 			return fmt.Errorf("添加明细失败: %w", err)
 		}
 	}
 
-	for i, item := range instance.request.CostItems {
+	for i, item := range *instance.request.CostItems {
 		if err := s.handleReimburseDetail(instance, taskInfo, item, i+1); err != nil {
 			return fmt.Errorf("填写报销明细失败: %w", err)
 		}
@@ -306,11 +307,12 @@ func (s *AutoFillingService) executeFillingProcess(instance *AutoFillingInstance
 		return fmt.Errorf("滚动失败: %w", err)
 	}
 	s.sendProgress(taskInfo, "上传发票...")
-	for _, filePath := range instance.request.FilePaths {
-		if err := s.handleVatInvoiceUpload(instance, taskInfo, filePath); err != nil {
-			return fmt.Errorf("上传发票失败: %w", err)
-		}
-	}
+	//todo
+	//for _, filePath := range instance.request.FilePaths {
+	//	if err := s.handleVatInvoiceUpload(instance, taskInfo, filePath); err != nil {
+	//		return fmt.Errorf("上传发票失败: %w", err)
+	//	}
+	//}
 
 	if err := s.handleWheelDown(instance, 0, -500); err != nil {
 		return fmt.Errorf("滚动失败: %w", err)
@@ -601,6 +603,86 @@ func (s *AutoFillingService) handleReimbursePayInfo(instance *AutoFillingInstanc
 	return nil
 }
 
+func (s *AutoFillingService) selectDropdownItem(instance *AutoFillingInstance, taskInfo *TaskInfo, targetItem string, desc string) error {
+	allLiElements := instance.page.Locator(".el-select-dropdown__item")
+	count, err := allLiElements.Count()
+	if err != nil {
+		s.sendProgress(taskInfo, "获取下拉选项数量失败")
+		s.sendProgress(taskInfo, fmt.Sprintf("%v获取下拉选项数量失败", desc))
+		return fmt.Errorf("获取下拉选项数量失败: %w", err)
+	}
+
+	// 如果没有任何选项，直接返回
+	if count == 0 {
+		s.sendProgress(taskInfo, fmt.Sprintf("%v下拉框无选项，跳过选择", desc))
+		return nil
+	}
+
+	var exactMatchLocator, fuzzyMatchLocator playwright.Locator
+
+	for i := 0; i < count; i++ {
+		liElement := allLiElements.Nth(i)
+		visible, err := liElement.IsVisible()
+		if err != nil || !visible {
+			continue
+		}
+
+		text, err := liElement.TextContent()
+		if err != nil {
+			continue
+		}
+
+		trimmedText := strings.TrimSpace(text)
+
+		// 1. 精确匹配
+		if trimmedText == targetItem {
+			exactMatchLocator = liElement
+			break // 找到精确匹配就立即停止搜索
+		}
+
+		// 2. 模糊匹配（如果没有精确匹配的情况下记录第一个模糊匹配）
+		if strings.Contains(trimmedText, targetItem) && fuzzyMatchLocator == nil {
+			fuzzyMatchLocator = liElement
+		}
+	}
+
+	var selectedLocator playwright.Locator
+	var selectionType string
+
+	// 选择策略：精确匹配 → 模糊匹配 → 第一个选项
+	if exactMatchLocator != nil {
+		selectedLocator = exactMatchLocator
+		selectionType = "精确匹配"
+	} else if fuzzyMatchLocator != nil {
+		selectedLocator = fuzzyMatchLocator
+		selectionType = "模糊匹配"
+	} else {
+		// 选择第一个可见的选项
+		for i := 0; i < count; i++ {
+			liElement := allLiElements.Nth(i)
+			if visible, _ := liElement.IsVisible(); visible {
+				selectedLocator = liElement
+				selectionType = "第一个选项"
+				break
+			}
+		}
+	}
+
+	if selectedLocator != nil {
+		// 获取选中选项的文本用于日志
+		selectedText, _ := selectedLocator.TextContent()
+		if err := selectedLocator.Click(); err != nil {
+			return fmt.Errorf("选择%v失败: %w", desc, err)
+		}
+		s.sendProgress(taskInfo, fmt.Sprintf("设置%v完成（%s: %s）", desc, selectionType, strings.TrimSpace(selectedText)))
+	} else {
+		s.sendProgress(taskInfo, fmt.Sprintf("未找到可选的%v选项为：%v，跳过选择", desc, selectionType))
+	}
+
+	time.Sleep(DelayShort)
+	return nil
+}
+
 func (s *AutoFillingService) handleBusinessDept(instance *AutoFillingInstance, taskInfo *TaskInfo) error {
 	s.sendProgress(taskInfo, "设置业务发生部门...")
 	businessDept := instance.page.Locator("div.el-form-item.is-required.custom-form-render-item.custom-form-render-item-twoline")
@@ -609,32 +691,7 @@ func (s *AutoFillingService) handleBusinessDept(instance *AutoFillingInstance, t
 	}
 
 	time.Sleep(DelayShort)
-
-	allLiElements := instance.page.Locator(".el-select-dropdown__item")
-	count, err := allLiElements.Count()
-	if err != nil {
-		return fmt.Errorf("获取下拉选项数量失败: %w", err)
-	}
-
-	for i := 0; i < count; i++ {
-		liElement := allLiElements.Nth(i)
-		visible, err := liElement.IsVisible()
-		if err != nil {
-			continue
-		}
-		if visible {
-			textLocator := liElement.GetByText(instance.request.PayInfo.BusinessDept)
-			if textCount, _ := textLocator.Count(); textCount > 0 {
-				if err := textLocator.Click(); err != nil {
-					return fmt.Errorf("选择业务发生部门失败: %w", err)
-				}
-				break
-			}
-		}
-	}
-
-	time.Sleep(DelayShort)
-	s.sendProgress(taskInfo, "设置业务发生部门完成")
+	_ = s.selectDropdownItem(instance, taskInfo, instance.request.PayInfo.BusinessDept, "业务发生部门")
 	return nil
 }
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
+	"invoice-agent/internal/app/models"
 	"invoice-agent/pkg/config"
 	"strings"
 )
@@ -27,13 +28,18 @@ func NewChatClient(apiKey string) *QwenLongClient {
 	return ChatClient
 }
 
-func (p *QwenLongClient) Chat(ctx context.Context, input string, history string) (*string, error) {
+func (p *QwenLongClient) Chat(ctx context.Context, req models.ChatRequest) (*string, error) {
 	msg := make([]openai.ChatCompletionMessageParamUnion, 0)
 	msg = append(msg, openai.SystemMessage("You are a helpful assistant."))
 
-	history_prompt := strings.Replace(config.GetOpenaiConf().ChatPrompt, "{{history}}", history, 1)
-	prompt := strings.Replace(history_prompt, "{{input_question}}", input, 1)
-	msg = append(msg, openai.UserMessage(prompt))
+	if req.Parse {
+		prompt := strings.Replace(config.GetOpenaiConf().ParsePrompt, "{{input_question}}", req.Input, 1)
+		msg = append(msg, openai.UserMessage(prompt))
+	} else {
+		history_prompt := strings.Replace(config.GetOpenaiConf().ChatPrompt, "{{history}}", req.History, 1)
+		prompt := strings.Replace(history_prompt, "{{input_question}}", req.Input, 1)
+		msg = append(msg, openai.UserMessage(prompt))
+	}
 	chatCompletion, err := p.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
 		Messages:    msg,
 		Model:       config.GetOpenaiConf().Model,

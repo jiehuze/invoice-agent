@@ -206,8 +206,10 @@ func (r *InvoiceFileRepository) ListByCont(invoice models.InvoiceFile, limit, of
 	}
 	if invoice.ServiceType == 0 {
 		db = db.Where("service_type = ?", 0)
-	} else {
+	} else if invoice.ServiceType == 3 {
 		db = db.Where("service_type != ?", 0)
+	} else {
+		db = db.Where("service_type = ?", invoice.ServiceType)
 	}
 
 	err := db.Limit(limit).Offset(offset).Find(&invoiceFiles).Error

@@ -24,11 +24,12 @@ const (
 
 // 数据结构定义
 type CostItem struct {
-	Category   string
-	Name       string
-	Comment    string
-	Cost       string
-	BillNumber string
+	Category   string        `json:"category"`    // 费用类别名称
+	Name       string        `json:"name"`        //费用名称
+	Comment    string        `json:"comment"`     //费用说明
+	Cost       string        `json:"cost"`        // 该类别下发票类型的总金额
+	BillNumber string        `json:"bill_number"` // 该类别下票据总数
+	Invoices   []InvoiceFile `json:"invoices"`    // 该类别下的所有票据
 }
 
 type BasicItem struct {
@@ -47,12 +48,12 @@ type PayItem struct {
 }
 
 type AutoFillingRequest struct {
-	BasicInfo BasicItem  `json:"basic_info"`
-	PayInfo   PayItem    `json:"pay_info"`
-	CostItems []CostItem `json:"cost_items"`
-	FilePaths []string   `json:"file_paths"`
-	Username  string     `json:"username"`
-	Password  string     `json:"password"`
+	SessionId string      `json:"session_id"`
+	BasicInfo BasicItem   `json:"basic_info"`
+	PayInfo   PayItem     `json:"pay_info"`
+	CostItems *[]CostItem `json:"cost_items"`
+	Username  string      `json:"username"`
+	Password  string      `json:"password"`
 }
 
 // ExpenseCategoryStats 费用类别统计结果
@@ -64,7 +65,8 @@ type ExpenseCategoryStats struct {
 }
 
 // StatByExpenseCategory 按费用类别统计发票文件
-func StatByExpenseCategory(invoices []InvoiceFile) map[string]*ExpenseCategoryStats {
+func StatByExpenseCategory(invoices []InvoiceFile) *[]CostItem {
+	var result []CostItem
 	stats := make(map[string]*ExpenseCategoryStats)
 
 	// 遍历所有发票文件
@@ -93,7 +95,19 @@ func StatByExpenseCategory(invoices []InvoiceFile) map[string]*ExpenseCategorySt
 		stats[category].Invoices = append(stats[category].Invoices, invoice)
 	}
 
-	return stats
+	for _, value := range stats {
+		costItem := CostItem{
+			Category:   value.CategoryName,
+			Cost:       fmt.Sprintf("%.2f", value.TotalAmount),
+			Name:       value.CategoryName,
+			Comment:    value.CategoryName,
+			BillNumber: fmt.Sprintf("%d", value.TicketCount),
+			Invoices:   value.Invoices,
+		}
+		result = append(result, costItem)
+	}
+
+	return &result
 }
 
 type InvoiceFile struct {
