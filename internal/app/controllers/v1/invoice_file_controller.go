@@ -15,7 +15,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 )
 
 type InvoiceFileController struct {
@@ -61,19 +60,13 @@ func (c *InvoiceFileController) CreateInvoiceFilesBatch(ctx *gin.Context) {
 
 // UpdateInvoiceFile 更新发票文件（支持部分字段更新）
 func (c *InvoiceFileController) UpdateInvoiceFile(ctx *gin.Context) {
-	id, err := strconv.ParseUint(ctx.Param("id"), 10, 64)
-	if err != nil {
-		controllers.Response(ctx, http.StatusBadRequest, "参数错误", "invalid id")
-		return
-	}
-
 	var invoiceFile models.InvoiceFile
 	if err := ctx.ShouldBindJSON(&invoiceFile); err != nil {
 		controllers.Response(ctx, http.StatusBadRequest, "参数错误", err)
 		return
 	}
 
-	if err := c.invoiceFileService.UpdateInvoiceFile(id, &invoiceFile); err != nil {
+	if err := c.invoiceFileService.UpdateInvoiceFile(invoiceFile.ID, &invoiceFile); err != nil {
 		controllers.Response(ctx, http.StatusInternalServerError, "更新发票文件失败", err)
 		return
 	}
@@ -173,16 +166,40 @@ func (c *InvoiceFileController) UploadInvoiceFile(ctx *gin.Context) {
 	// 获取上传的文件
 	fileHeader, err := ctx.FormFile("file")
 	if err != nil {
+		log.Errorf("文件上传失败: %v", err)
 		controllers.Response(ctx, http.StatusBadRequest, "文件上传失败", err)
 		return
 	}
+	sessionId := ctx.PostForm("session_id")
+	if sessionId == "" {
+		log.Errorf("请创建一个新的对话")
+		controllers.Response(ctx, http.StatusBadRequest, "请创建一个新的对话...", nil)
+		return
+	}
 
-	// 生成时间格式的目录名
-	timestampDir := time.Now().Format("20060102150405")
+	md5 := ctx.PostForm("md5")
+	if md5 == "" {
+		log.Errorf("请上传文件的md5")
+		controllers.Response(ctx, http.StatusBadRequest, "请上传文件的md5...", nil)
+		return
+	}
+
+	tmp := models.InvoiceFile{
+		SessionId: sessionId,
+		MD5:       md5,
+	}
+	//去重出去，重复的数据要进行删除
+	files, _ := services.InvoiceFile.ListInvoiceFilesByCont(tmp, 10, 0)
+	if files != nil && len(files) > 0 {
+		log.Errorf("文件重复, file: %s, md5: %s", fileHeader.Filename, md5)
+		controllers.Response(ctx, http.StatusBadRequest, "重复的文件...", md5)
+		return
+	}
 
 	// 创建目录路径
-	dirPath := filepath.Join("/app/logs/uploads", timestampDir)
+	dirPath := filepath.Join("/app/output/uploads")
 	if err := os.MkdirAll(dirPath, os.ModePerm); err != nil {
+		log.Errorf("本地目录:%s, 创建失败", dirPath)
 		controllers.Response(ctx, http.StatusInternalServerError, "创建本地目录失败", err)
 		return
 	}
@@ -193,6 +210,15 @@ func (c *InvoiceFileController) UploadInvoiceFile(ctx *gin.Context) {
 		controllers.Response(ctx, http.StatusInternalServerError, "保存文件到本地失败", err)
 		return
 	}
+
+	// 计算文件MD5值
+	//md5Hash, err := util.CalculateFileMD5(localFilePath)
+	//if err != nil {
+	//	// 如果计算MD5失败，删除已保存的本地文件
+	//	os.Remove(localFilePath)
+	//	controllers.Response(ctx, http.StatusInternalServerError, "计算文件MD5值失败", err)
+	//	return
+	//}
 
 	// 从本地文件上传到OpenAI
 	fileId, err := services.FileClient.UploadFile(
@@ -209,9 +235,11 @@ func (c *InvoiceFileController) UploadInvoiceFile(ctx *gin.Context) {
 
 	// 创建发票文件记录
 	invoiceFile := models.InvoiceFile{
-		FileName: fileHeader.Filename,
-		FilePath: localFilePath,
-		FileID:   fileId, // 使用OpenAI返回的文件ID
+		SessionId: sessionId,
+		FileName:  fileHeader.Filename,
+		FilePath:  localFilePath,
+		FileID:    fileId, // 使用OpenAI返回的文件ID
+		MD5:       md5,
 	}
 
 	// 保存到数据库
@@ -223,35 +251,31 @@ func (c *InvoiceFileController) UploadInvoiceFile(ctx *gin.Context) {
 		return
 	}
 
-	controllers.Response(ctx, http.StatusOK, "文件上传和保存成功", gin.H{
-		"file_id":    fileId,
-		"file_name":  fileHeader.Filename,
-		"local_path": localFilePath,
-	})
+	controllers.Response(ctx, http.StatusOK, "文件上传和保存成功", invoiceFile)
 }
 
 // 发票分析
 func (c *InvoiceFileController) FileParseChat(ctx *gin.Context) {
-	sessionId := ctx.PostForm("session_id")
-	fileIdsStr := ctx.PostForm("file_ids")
-	if fileIdsStr == "" {
-		controllers.Response(ctx, code.HTTPStatusErr, "请上传发票文件", nil)
+	var req models.ChatRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		log.Errorf("参数错误: %v", err)
+		controllers.Response(ctx, http.StatusBadRequest, "参数错误", gin.H{"error": err.Error()})
 		return
 	}
-	// 按逗号分割file_ids
-	fileIds := strings.Split(fileIdsStr, ",")
-	// 清理空格
-	for i, id := range fileIds {
-		fileIds[i] = strings.TrimSpace(id)
+	if req.FileIds == nil || len(req.FileIds) == 0 {
+		log.Errorf("请上传发票文件")
+		controllers.Response(ctx, http.StatusBadRequest, "请上传发票文件", nil)
+		return
 	}
-	//获取上传的id
 
 	// 设置响应头支持流式输出
 	ctx.Header("Content-Type", "text/event-stream; charset=utf-8")
 	ctx.Header("Cache-Control", "no-cache")
 	ctx.Header("Connection", "keep-alive")
 
-	contentChan, errorChan := services.ChatClient.FileParseStream(ctx.Request.Context(), fileIds)
+	contentChan, errorChan := services.ChatClient.FileParseStream(ctx.Request.Context(), req)
+	controllers.SSEPush(ctx, "#### 分析单据后的json信息为：\n")
+	controllers.SSEPush(ctx, "```json\n")
 	// 收集完整的流式数据
 	var fullContent strings.Builder
 	for {
@@ -260,60 +284,42 @@ func (c *InvoiceFileController) FileParseChat(ctx *gin.Context) {
 			if !ok {
 				// 流结束，开始解析数据
 				log.Info("===== 流结束，开始解析数据")
+				controllers.SSEPush(ctx, "\n```\n")
 				// 获取完整内容
 				contentStr := fullContent.String()
 				var invoiceFiles []models.InvoiceFile
 				// 解析JSON数据
 				if err := json.Unmarshal([]byte(contentStr), &invoiceFiles); err != nil {
-					errorMsg := fmt.Sprintf("AI助手: JSON解析失败: %v\n\n", err)
-					_, _ = ctx.Writer.WriteString(errorMsg)
-					ctx.Writer.Flush()
+					errorMsg := fmt.Sprintf("AI助手: JSON解析失败: %v", err)
+					controllers.SSEPush(ctx, errorMsg)
 					return
 				}
 
 				for _, invoiceFile := range invoiceFiles {
-					tmp := models.InvoiceFile{
-						SessionId:   sessionId,
-						InvoiceCode: invoiceFile.InvoiceCode,
-					}
-					//去重出去，重复的数据要进行删除
-					files, _ := services.InvoiceFile.ListInvoiceFilesByCont(tmp, 10, 0)
-					if files != nil && len(files) > 1 {
-						for _, file := range files {
-							if file.InvoiceCode == "" {
-								services.InvoiceFile.DeleteInvoiceFile(file.ID)
-							}
-						}
-						continue
-					}
-
 					err := services.InvoiceFile.UpdateInvoiceFileByFileId(invoiceFile.FileID, &invoiceFile)
 					if err != nil {
-						errorMsg := fmt.Sprintf("AI助手: 更新发票文件失败: %v\n\n", err)
-						_, _ = ctx.Writer.WriteString(errorMsg)
-						ctx.Writer.Flush()
+						errorMsg := fmt.Sprintf("AI助手: 更新发票文件失败: %v", err)
+						controllers.SSEPush(ctx, errorMsg)
 					}
 				}
 
 				// 发送解析结果
-				resultMsg := fmt.Sprintf("AI助手: 共解析%d条发票记录\n\n", len(invoiceFiles))
-				_, _ = ctx.Writer.WriteString(resultMsg)
+				resultMsg := fmt.Sprintf("AI助手: 共解析%d条发票记录", len(invoiceFiles))
+				controllers.SSEPush(ctx, resultMsg)
 
 				// 发送每条记录的详细信息
 				for i, invoice := range invoiceFiles {
-					detailMsg := fmt.Sprintf("AI助手: 发票%d: %s (%s) - %.2f元\n\n",
+					detailMsg := fmt.Sprintf("AI助手: 发票%d: %s (%s) - %.2f元",
 						i+1, invoice.InvoiceType, invoice.InvoiceCode, invoice.TotalAmount)
-					_, _ = ctx.Writer.WriteString(detailMsg)
+					controllers.SSEPush(ctx, detailMsg)
 				}
-
-				ctx.Writer.Flush()
 				return
 			}
 			// 实时处理内容
 			fmt.Print(content)
 			fullContent.WriteString(content)
-			_, _ = ctx.Writer.WriteString(content)
-			ctx.Writer.Flush()
+
+			controllers.SSEPush(ctx, content)
 		case err, ok := <-errorChan:
 			if ok && err != nil {
 				// 处理错误

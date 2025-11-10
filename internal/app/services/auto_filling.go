@@ -147,6 +147,7 @@ func (s *AutoFillingService) executeTask(taskID string, instance *AutoFillingIns
 		}
 
 		// 清理实例资源
+		log.Infoln("任务完成，清理实例资源...")
 		s.cleanupInstance(instance)
 	}()
 
@@ -199,9 +200,9 @@ func (s *AutoFillingService) cleanupInstance(instance *AutoFillingInstance) {
 
 func (s *AutoFillingService) Runtest() error {
 	log.Infoln("------ Runtest running .....")
-	//if err := s.ensurePlaywrightInstalled(); err != nil {
-	//	return fmt.Errorf("Playwright 初始化失败: %w", err)
-	//}
+	if err := s.ensurePlaywrightInstalled(); err != nil {
+		return fmt.Errorf("Playwright 初始化失败: %w", err)
+	}
 	log.Infoln("------ Runtest running start")
 	// 启动 Playwright
 	pw, err := playwright.Run()
@@ -239,16 +240,18 @@ func (s *AutoFillingService) runAutoFilling(instance *AutoFillingInstance, taskI
 		return fmt.Errorf("Playwright 初始化失败: %w", err)
 	}
 
-	s.sendProgress(taskInfo, "开始初始化 Playwright...")
+	s.sendProgress(taskInfo, "---")
+	s.sendProgress(taskInfo, "#### ▶ 启动报销任务（任务ID："+taskInfo.ID+"）")
 
 	// 启动 Playwright
 	pw, err := playwright.Run()
 	if err != nil {
-		return fmt.Errorf("启动 Playwright 失败: %w", err)
+		return fmt.Errorf("启动报销任务失败: %w", err)
 	}
 	instance.pw = pw
 
-	s.sendProgress(taskInfo, "浏览器启动中...")
+	s.sendProgress(taskInfo, "> 🔄 信息初始化中...")
+	log.Infoln("信息初始化中...")
 
 	// 启动浏览器
 	browser, err := pw.Chromium.Launch(playwright.BrowserTypeLaunchOptions{
@@ -259,8 +262,7 @@ func (s *AutoFillingService) runAutoFilling(instance *AutoFillingInstance, taskI
 	}
 	instance.browser = browser
 
-	s.sendProgress(taskInfo, "浏览器启动成功")
-
+	log.Infoln("浏览器启动成功")
 	// 创建浏览器上下文
 	context, err := browser.NewContext()
 	if err != nil {
@@ -268,7 +270,7 @@ func (s *AutoFillingService) runAutoFilling(instance *AutoFillingInstance, taskI
 	}
 	instance.context = context
 
-	s.sendProgress(taskInfo, "浏览器上下文创建成功")
+	log.Infoln("浏览器上下文创建成功")
 
 	// 创建页面
 	page, err := context.NewPage()
@@ -277,7 +279,8 @@ func (s *AutoFillingService) runAutoFilling(instance *AutoFillingInstance, taskI
 	}
 	instance.page = page
 
-	s.sendProgress(taskInfo, "新页面创建成功")
+	s.sendProgress(taskInfo, "> ✅ 报销任务启动准备完成")
+	s.sendProgress(taskInfo, "---")
 
 	// 执行主要流程
 	return s.executeFillingProcess(instance, taskInfo)
@@ -286,78 +289,90 @@ func (s *AutoFillingService) runAutoFilling(instance *AutoFillingInstance, taskI
 // 执行填报流程
 func (s *AutoFillingService) executeFillingProcess(instance *AutoFillingInstance, taskInfo *TaskInfo) error {
 	// 导航到目标URL
-	s.sendProgress(taskInfo, "正在导航到目标网址...")
+	s.sendProgress(taskInfo, "---")
+	s.sendProgress(taskInfo, "#### 🔧 正在进入报销系统...")
 	if _, err := instance.page.Goto("http://open.sky-dome.com.cn:9086/"); err != nil {
 		return fmt.Errorf("导航失败: %w", err)
 	}
 
 	// 检查是否被取消
 	if s.isTaskCancelled(instance) {
+		s.sendProgress(taskInfo, "自动填报被取消")
 		return fmt.Errorf("任务已被取消")
 	}
 
 	// 执行登录操作
-	s.sendProgress(taskInfo, "开始执行登录操作...")
+	s.sendProgress(taskInfo, "- ✅ 登录系统")
 	if err := s.handleLogin(instance, taskInfo); err != nil {
+		s.sendProgress(taskInfo, fmt.Sprintf("登录失败: %v", err))
 		return fmt.Errorf("登录失败: %w", err)
 	}
 
 	// 后续流程与之前类似，但需要传递 instance 和 taskInfo
 	// 打开新增对话框
-	s.sendProgress(taskInfo, "正在打开新增对话框...")
+	s.sendProgress(taskInfo, "- ✅ 新增报销")
 	if err := s.handleAddDialog(instance, taskInfo); err != nil {
+		s.sendProgress(taskInfo, fmt.Sprintf("无法打开发票报销页面: %v", err))
 		return fmt.Errorf("打开新增对话框失败: %w", err)
 	}
 
 	// 填写基础信息
-	s.sendProgress(taskInfo, "填写基础信息...")
+	s.sendProgress(taskInfo, "#### 🔧 开始基础信息设置")
 	if err := s.handleReimburseBasic(instance, taskInfo); err != nil {
-		return fmt.Errorf("填写基础信息失败: %w", err)
+		s.sendProgress(taskInfo, fmt.Sprintf("填写基础信息出错: %v", err))
+		//return fmt.Errorf("填写基础信息失败: %w", err)
 	}
 
 	if err := s.handleWheelDown(instance, 0, 500); err != nil {
-		return fmt.Errorf("滚动失败: %w", err)
+		//return fmt.Errorf("滚动失败: %w", err)
 	}
 
 	// 填写支付信息
-	s.sendProgress(taskInfo, "填写支付信息...")
+	s.sendProgress(taskInfo, "#### 💳 开始支付信息设置")
 	if err := s.handleReimbursePayInfo(instance, taskInfo); err != nil {
+		s.sendProgress(taskInfo, fmt.Sprintf("填写支付信息出错: %v", err))
 		return fmt.Errorf("填写支付信息失败: %w", err)
 	}
 
 	// 填写报销明细
-	s.sendProgress(taskInfo, "填写报销明细...")
+	s.sendProgress(taskInfo, "#### 📄 开始报销细节记录设置")
 	for i := 0; i < len(*instance.request.CostItems); i++ {
 		if err := s.handleAddDetail(instance, taskInfo); err != nil {
-			return fmt.Errorf("添加明细失败: %w", err)
+			s.sendProgress(taskInfo, fmt.Sprintf("添加明细项出错: %v", err))
 		}
 	}
 
 	for i, item := range *instance.request.CostItems {
 		if err := s.handleReimburseDetail(instance, taskInfo, item, i+1); err != nil {
-			return fmt.Errorf("填写报销明细失败: %w", err)
+			s.sendProgress(taskInfo, fmt.Sprintf("填写报销明细出错: %v", err))
 		}
 	}
+
+	s.sendProgress(taskInfo, "---")
 
 	// 增值税发票批量上传
 	if err := s.handleWheelDown(instance, 0, 500); err != nil {
-		return fmt.Errorf("滚动失败: %w", err)
-	}
-	s.sendProgress(taskInfo, "上传发票...")
-	//todo
-	for _, filePath := range instance.request.InvoiceFiles {
-		if err := s.handleVatInvoiceUpload(instance, taskInfo, filePath); err != nil {
-			return fmt.Errorf("上传发票失败: %w", err)
-		}
+		//return fmt.Errorf("滚动失败: %w", err)
 	}
 
+	s.sendProgress(taskInfo, "#### 上传发票中...")
+	for _, filePath := range instance.request.InvoiceFiles {
+		if err := s.handleVatInvoiceUpload(instance, taskInfo, filePath); err != nil {
+			s.sendProgress(taskInfo, fmt.Sprintf("上传发票出错: %v", err))
+			//return fmt.Errorf("上传发票失败: %w", err)
+		}
+	}
+	s.sendProgress(taskInfo, "> 完成发票上传")
+	s.sendProgress(taskInfo, "---")
+
 	if err := s.handleWheelDown(instance, 0, -500); err != nil {
-		return fmt.Errorf("滚动失败: %w", err)
+		//return fmt.Errorf("滚动失败: %w", err)
 	}
 
 	if err := s.handleSaveInfo(instance, taskInfo); err != nil {
 		return fmt.Errorf("保存信息失败: %w", err)
 	}
+	s.sendProgress(taskInfo, "> 报销任务完成")
 
 	return nil
 }
@@ -454,10 +469,11 @@ var AutoFillingClient *AutoFillingService
 //}
 
 func (s *AutoFillingService) handleLogin(instance *AutoFillingInstance, taskInfo *TaskInfo) error {
-	s.sendProgress(taskInfo, "进入登录页面...")
+	//s.sendProgress(taskInfo, "进入登录页面...")
 
 	// 等待用户名输入框
-	s.sendProgress(taskInfo, "等待输入用户名和密码...")
+	//s.sendProgress(taskInfo, "等待输入用户名和密码...")
+	log.Infoln("等待输入用户名和密码...")
 	if err := instance.page.Locator("[placeholder=\"请输入账号\"]").WaitFor(playwright.LocatorWaitForOptions{
 		State: playwright.WaitForSelectorStateVisible,
 	}); err != nil {
@@ -482,7 +498,8 @@ func (s *AutoFillingService) handleLogin(instance *AutoFillingInstance, taskInfo
 	time.Sleep(DelayShort)
 
 	// 点击登录按钮
-	s.sendProgress(taskInfo, "登录系统...")
+	//s.sendProgress(taskInfo, "登录系统...")
+	log.Infoln("登录系统...")
 	if err := instance.page.GetByRole("button", playwright.PageGetByRoleOptions{Name: "登录"}).Click(); err != nil {
 		s.sendProgress(taskInfo, fmt.Sprintf("点击登录按钮失败:  %v", err))
 		return fmt.Errorf("点击登录按钮失败: %w", err)
@@ -490,53 +507,58 @@ func (s *AutoFillingService) handleLogin(instance *AutoFillingInstance, taskInfo
 
 	// 等待并重新加载
 	time.Sleep(DelayLong)
-	s.sendProgress(taskInfo, "导航到报销页面...")
+	//s.sendProgress(taskInfo, "导航到报销页面...")
+	log.Infoln("导航到报销页面...")
 	if _, err := instance.page.Goto("http://open.sky-dome.com.cn:9086/#/reimbursement/employee"); err != nil {
 		s.sendProgress(taskInfo, fmt.Sprintf("导航到报销页面失败:  %v", err))
 		return fmt.Errorf("导航到报销页面失败: %w", err)
 	}
 
 	time.Sleep(DelayNormal)
-	s.sendProgress(taskInfo, "进入到报销页面...")
+	//s.sendProgress(taskInfo, "进入到报销页面...")
+	log.Infoln("进入到报销页面...")
 	return nil
 }
 
 func (s *AutoFillingService) handleAddDialog(instance *AutoFillingInstance, taskInfo *TaskInfo) error {
-	s.sendProgress(taskInfo, "打开新增报销记录对话框...")
+	//s.sendProgress(taskInfo, "打开新增报销记录对话框...")
+	log.Infoln("打开新增报销记录对话框...")
 	if err := instance.page.GetByRole("button", playwright.PageGetByRoleOptions{Name: "新增"}).Click(); err != nil {
 		s.sendProgress(taskInfo, fmt.Sprintf("点击新增按钮失败:  %v", err))
 		return fmt.Errorf("点击新增按钮失败: %w", err)
 	}
 
 	time.Sleep(DelayShort)
-	s.sendProgress(taskInfo, "打开新增报销记录对话框完成")
+	//s.sendProgress(taskInfo, "打开新增报销记录对话框完成")
+	log.Infoln("打开新增报销记录对话框完成")
 	return nil
 }
 
 func (s *AutoFillingService) handleReimburseBasic(instance *AutoFillingInstance, taskInfo *TaskInfo) error {
 	// 设置报销类型
-	s.sendProgress(taskInfo, "设置报销类型...")
+	s.sendProgress(taskInfo, "- ✅设置报销类型完成")
 	if err := s.handleReimburseType(instance, taskInfo); err != nil {
 		s.sendProgress(taskInfo, fmt.Sprintf("设置报销类型失败:  %v", err))
 		return fmt.Errorf("设置报销类型失败: %w", err)
 	}
 
 	// 设置紧急类型
-	s.sendProgress(taskInfo, "设置紧急类型...")
+	s.sendProgress(taskInfo, "- ✅设置紧急类型完成")
 	if err := s.handleUrgentType(instance, taskInfo); err != nil {
 		s.sendProgress(taskInfo, fmt.Sprintf("设置紧急类型失败: %v", err))
 		return fmt.Errorf("设置紧急类型失败: %w", err)
 	}
 
 	// 填写报销说明
-	s.sendProgress(taskInfo, "填写报销说明...")
+	s.sendProgress(taskInfo, "- ✅设置报销说明完成")
 	if err := s.handleReimburseComment(instance, taskInfo); err != nil {
 		s.sendProgress(taskInfo, fmt.Sprintf("填写报销说明失败: %v", err))
 		return fmt.Errorf("填写报销说明失败: %w", err)
 	}
 
 	time.Sleep(DelayShort)
-	s.sendProgress(taskInfo, "基础信息填写完成...")
+	s.sendProgress(taskInfo, "- 🟢 基础信息设置完成")
+	s.sendProgress(taskInfo, "---")
 	return nil
 }
 
@@ -605,19 +627,19 @@ func (s *AutoFillingService) handleWheelDown(instance *AutoFillingInstance, x fl
 
 func (s *AutoFillingService) handleReimbursePayInfo(instance *AutoFillingInstance, taskInfo *TaskInfo) error {
 	// 设置业务发生部门
-	s.sendProgress(taskInfo, "设置业务发生部门: "+instance.request.PayInfo.BusinessDept)
+	s.sendProgress(taskInfo, "- ✅ 设置业务发生部门: "+instance.request.PayInfo.BusinessDept)
 	if err := s.handleBusinessDept(instance, taskInfo); err != nil {
 		s.sendProgress(taskInfo, fmt.Sprintf("设置业务发生部门失败: %v", err))
 	}
 
 	// 设置预算承担部门
-	s.sendProgress(taskInfo, "设置预算承担部门: "+instance.request.PayInfo.BudgetDept)
+	s.sendProgress(taskInfo, "- ✅ 设置预算承担部门: "+instance.request.PayInfo.BudgetDept)
 	if err := s.handleBudgetDept(instance, taskInfo); err != nil {
 		s.sendProgress(taskInfo, fmt.Sprintf("设置预算承担部门失败: %v", err))
 	}
 
 	// 设置费用归集项目
-	s.sendProgress(taskInfo, "设置费用归集项目: "+instance.request.PayInfo.ProjectType)
+	s.sendProgress(taskInfo, "- ✅ 设置费用归集项目: "+instance.request.PayInfo.ProjectType)
 	if err := s.handleProjectType(instance, taskInfo); err != nil {
 		s.sendProgress(taskInfo, fmt.Sprintf("设置项目类型失败: %v", err))
 	}
@@ -627,13 +649,14 @@ func (s *AutoFillingService) handleReimbursePayInfo(instance *AutoFillingInstanc
 	}
 
 	// 设置付款公司
-	s.sendProgress(taskInfo, "设置付款公司: "+instance.request.PayInfo.PayDept)
+	s.sendProgress(taskInfo, "- ✅ 设置付款公司: "+instance.request.PayInfo.PayDept)
 	if err := s.handlePayDept(instance, taskInfo); err != nil {
 		s.sendProgress(taskInfo, fmt.Sprintf("设置付款部门失败: %v", err))
 	}
 
 	time.Sleep(DelayShort)
-	s.sendProgress(taskInfo, "支付信息填写完成")
+	s.sendProgress(taskInfo, "> 🟢 支付信息设置完成")
+	s.sendProgress(taskInfo, "---")
 	return nil
 }
 
@@ -783,7 +806,8 @@ func (s *AutoFillingService) handlePayDept(instance *AutoFillingInstance, taskIn
 }
 
 func (s *AutoFillingService) handleAddDetail(instance *AutoFillingInstance, taskInfo *TaskInfo) error {
-	s.sendProgress(taskInfo, "新增报销明细...")
+	//s.sendProgress(taskInfo, "新增报销明细...")
+	log.Infoln("点击新增报销明细按钮...")
 	addButton := instance.page.Locator("button:has-text(\"导出\") + button")
 	if err := addButton.Click(); err != nil {
 		s.sendProgress(taskInfo, fmt.Sprintf("点击新增明细按钮失败: %v", err))
@@ -791,12 +815,14 @@ func (s *AutoFillingService) handleAddDetail(instance *AutoFillingInstance, task
 	}
 
 	time.Sleep(DelayShort)
-	s.sendProgress(taskInfo, "新增一条报销细节记录完成")
+	//s.sendProgress(taskInfo, "新增一条报销细节记录完成")
+	log.Infoln("新增一条报销细节记录完成")
 	return nil
 }
 
 func (s *AutoFillingService) handleReimburseDetail(instance *AutoFillingInstance, taskInfo *TaskInfo, item models.CostItem, trIndex int) error {
-	s.sendProgress(taskInfo, fmt.Sprintf("填写报销明细第 %d 行...", trIndex))
+	s.sendProgress(taskInfo, fmt.Sprintf("##### ➕ 新增一条报销细节记录"))
+	log.Infoln("填写报销明细第 %d 行...", trIndex)
 	divElements := instance.page.Locator("div.el-table__header-wrapper")
 	count, err := divElements.Count()
 	if err != nil {
@@ -866,7 +892,7 @@ func (s *AutoFillingService) handleReimburseDetail(instance *AutoFillingInstance
 }
 
 func (s *AutoFillingService) handleCostCategoryInDetail(instance *AutoFillingInstance, taskInfo *TaskInfo, tdElement playwright.Locator, costCategory string) error {
-	s.sendProgress(taskInfo, "设置费用类别: "+costCategory)
+	s.sendProgress(taskInfo, "- ✅ 设置费用类别: "+costCategory)
 	if err := tdElement.Locator("input.el-input__inner").Click(); err != nil {
 		s.sendProgress(taskInfo, fmt.Sprintf("点击费用类别输入框失败: %v", err))
 		return fmt.Errorf("点击费用类别输入框失败: %w", err)
@@ -897,12 +923,12 @@ func (s *AutoFillingService) handleCostCategoryInDetail(instance *AutoFillingIns
 	}
 
 	time.Sleep(DelayShort)
-	s.sendProgress(taskInfo, "费用类别设置完成")
+	//s.sendProgress(taskInfo, "- 🟢 费用类别设置完成")
 	return nil
 }
 
 func (s *AutoFillingService) handleCostNameInDetail(instance *AutoFillingInstance, taskInfo *TaskInfo, tdElement playwright.Locator, costName string) error {
-	s.sendProgress(taskInfo, "设置费用名称: "+costName)
+	s.sendProgress(taskInfo, "- ✅ 设置费用名称: "+costName)
 	if err := tdElement.Locator("input.el-input__inner").Click(); err != nil {
 		s.sendProgress(taskInfo, fmt.Sprintf("点击费用名称输入框失败: %v", err))
 		return fmt.Errorf("点击费用名称输入框失败: %w", err)
@@ -915,61 +941,61 @@ func (s *AutoFillingService) handleCostNameInDetail(instance *AutoFillingInstanc
 }
 
 func (s *AutoFillingService) handleCostCommentInDetail(instance *AutoFillingInstance, taskInfo *TaskInfo, tdElement playwright.Locator, costComment string) error {
-	s.sendProgress(taskInfo, "填写费用说明: "+costComment)
+	s.sendProgress(taskInfo, "- ✅ 填写费用说明: "+costComment)
 	if err := tdElement.Locator("input.el-input__inner").Fill(costComment); err != nil {
 		s.sendProgress(taskInfo, fmt.Sprintf("填写费用说明失败: %v", err))
 		return fmt.Errorf("填写费用说明失败: %w", err)
 	}
 
 	time.Sleep(DelayShort)
-	s.sendProgress(taskInfo, "费用说明填写完成")
+	//s.sendProgress(taskInfo, "- 费用说明填写完成")
 	return nil
 }
 
 func (s *AutoFillingService) handleCostInDetail(instance *AutoFillingInstance, taskInfo *TaskInfo, tdElement playwright.Locator, cost string) error {
-	s.sendProgress(taskInfo, "填写报销金额: "+cost)
+	s.sendProgress(taskInfo, "- 💰 填写报销金额: "+cost)
 	if err := tdElement.Locator("input.el-input__inner").Fill(cost); err != nil {
 		s.sendProgress(taskInfo, fmt.Sprintf("填写报销金额失败: %v", err))
 		return fmt.Errorf("填写报销金额失败: %w", err)
 	}
 
 	time.Sleep(DelayShort)
-	s.sendProgress(taskInfo, "报销金额填写完成")
+	//s.sendProgress(taskInfo, "- 报销金额填写完成")
 	return nil
 }
 
 func (s *AutoFillingService) handleBillNumberInDetail(instance *AutoFillingInstance, taskInfo *TaskInfo, tdElement playwright.Locator, billNumber string) error {
-	s.sendProgress(taskInfo, "填写发票张数: "+billNumber)
+	s.sendProgress(taskInfo, "- 📎 填写发票张数: "+billNumber)
 	if err := tdElement.Locator("input.el-input__inner").Fill(billNumber); err != nil {
 		s.sendProgress(taskInfo, fmt.Sprintf("填写发票张数失败: %v", err))
 		return fmt.Errorf("填写发票张数失败: %w", err)
 	}
 
 	time.Sleep(DelayShort)
-	s.sendProgress(taskInfo, "发票张数填写完成")
+	//s.sendProgress(taskInfo, "- 发票张数填写完成")
 	return nil
 }
 
 func (s *AutoFillingService) handleVatInvoiceUpload(instance *AutoFillingInstance, taskInfo *TaskInfo, fileName string) error {
-	s.sendProgress(taskInfo, "上传发票文件: "+fileName)
+	s.sendProgress(taskInfo, "- ✅ 上传发票文件: "+fileName)
 	if err := instance.page.Locator("input.el-upload__input").SetInputFiles([]string{fileName}); err != nil {
 		s.sendProgress(taskInfo, fmt.Sprintf("上传发票文件失败: %v", err))
 		return fmt.Errorf("上传发票文件失败: %w", err)
 	}
 
 	time.Sleep(5 * DelayShort)
-	s.sendProgress(taskInfo, "发票文件上传完成: "+fileName)
+	s.sendProgress(taskInfo, "- 🟢 上传文件完成，发票文件为: "+fileName)
 	return nil
 }
 
 func (s *AutoFillingService) handleSaveInfo(instance *AutoFillingInstance, taskInfo *TaskInfo) error {
-	s.sendProgress(taskInfo, "保存信息...")
+	s.sendProgress(taskInfo, "#### 💾 保存信息...")
 	if err := instance.page.GetByRole("button", playwright.PageGetByRoleOptions{Name: "保存"}).Click(); err != nil {
 		s.sendProgress(taskInfo, fmt.Sprintf("点击保存按钮失败: %v", err))
 		return fmt.Errorf("点击保存按钮失败: %w", err)
 	}
 
 	time.Sleep(DelayNormal)
-	s.sendProgress(taskInfo, "信息保存完成")
+	s.sendProgress(taskInfo, "> 🟢 信息保存完成")
 	return nil
 }

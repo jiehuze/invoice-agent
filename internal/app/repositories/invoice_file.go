@@ -211,6 +211,9 @@ func (r *InvoiceFileRepository) ListByCont(invoice models.InvoiceFile, limit, of
 	} else {
 		db = db.Where("service_type = ?", invoice.ServiceType)
 	}
+	if invoice.MD5 != "" {
+		db = db.Where("md5 = ?", invoice.MD5)
+	}
 
 	err := db.Limit(limit).Offset(offset).Find(&invoiceFiles).Error
 	return invoiceFiles, err

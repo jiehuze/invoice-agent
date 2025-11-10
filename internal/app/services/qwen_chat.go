@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
+	log "github.com/sirupsen/logrus"
 	"invoice-agent/internal/app/models"
 	"invoice-agent/pkg/config"
 	"strings"
@@ -64,7 +65,7 @@ func (p *QwenLongClient) ChatStream(ctx context.Context, req models.ChatRequest)
 		msg := make([]openai.ChatCompletionMessageParamUnion, 0)
 		msg = append(msg, openai.SystemMessage("You are a helpful assistant."))
 		if req.Parse {
-			prompt := strings.Replace(config.GetOpenaiConf().ParsePrompt, "{{input_question}}", req.Input, 1)
+			prompt := strings.Replace(config.GetOpenaiConf().ParsePrompt, "{{input_question}}", req.History, 1)
 			msg = append(msg, openai.UserMessage(prompt))
 		} else {
 			history_prompt := strings.Replace(config.GetOpenaiConf().ChatPrompt, "{{history}}", req.History, 1)
@@ -97,7 +98,7 @@ func (p *QwenLongClient) ChatStream(ctx context.Context, req models.ChatRequest)
 	return contentChan, errorChan
 }
 
-func (p *QwenLongClient) FileParseStream(ctx context.Context, fileIds []string) (<-chan string, <-chan error) {
+func (p *QwenLongClient) FileParseStream(ctx context.Context, req models.ChatRequest) (<-chan string, <-chan error) {
 	contentChan := make(chan string)
 	errorChan := make(chan error, 1) // 缓冲通道，避免goroutine泄漏
 
@@ -108,11 +109,13 @@ func (p *QwenLongClient) FileParseStream(ctx context.Context, fileIds []string) 
 		var fileids string
 		msg := make([]openai.ChatCompletionMessageParamUnion, 0)
 		msg = append(msg, openai.SystemMessage("You are a helpful assistant."))
-		for _, s := range fileIds {
+		for _, s := range req.FileIds {
 			msg = append(msg, openai.SystemMessage("fileid://"+s))
 			fileids += s + ","
 		}
-		prompt := strings.Replace(config.GetOpenaiConf().Prompt, "{{file_ids}}", fileids, 1)
+		prompt := strings.Replace(config.GetOpenaiConf().FilePrompt, "{{file_ids}}", fileids, 1)
+		prompt = strings.Replace(prompt, "{{input_question}}", req.Input, 1)
+		log.Infoln("---------- prompt: ", prompt)
 		msg = append(msg, openai.UserMessage(prompt))
 
 		// 创建流式请求

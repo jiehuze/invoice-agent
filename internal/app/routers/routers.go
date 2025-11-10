@@ -27,6 +27,7 @@ func SetUp() *gin.Engine {
 		{
 			controller := v1.NewInvoiceChatController(services.ChatClient)
 			chatGroup.POST("", controller.Chat)
+			chatGroup.POST("filling", controller.StartFilling)
 		}
 
 		invoiceFileGroup := mainGroup.Group("/files")
@@ -36,11 +37,11 @@ func SetUp() *gin.Engine {
 			invoiceFileGroup.POST("/batch", controller.CreateInvoiceFilesBatch)
 			invoiceFileGroup.GET("/list", controller.ListInvoiceFiles)
 			invoiceFileGroup.GET("/:id", controller.GetInvoiceFile)
-			invoiceFileGroup.PUT("/update/:id", controller.UpdateInvoiceFile)
+			invoiceFileGroup.PUT("/update", controller.UpdateInvoiceFile)
 			invoiceFileGroup.DELETE("/:id", controller.DeleteInvoiceFile)
 			invoiceFileGroup.POST("/upload", controller.UploadInvoiceFile)
 			invoiceFileGroup.GET("/expensive", controller.GetInvoiceFileInExpensive)
-			invoiceFileGroup.GET("/parse", controller.FileParseChat)
+			invoiceFileGroup.POST("/parse", controller.FileParseChat)
 		}
 	})
 

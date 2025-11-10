@@ -149,6 +149,7 @@ type InvoiceFile struct {
 	FileName        string          `gorm:"size:500;not null;comment:原始文件名" json:"file_name"`
 	FilePath        string          `gorm:"size:1000;default:null;comment:文件路径" json:"file_path"` // 记录文件路径
 	FileID          string          `gorm:"size:100;not null;uniqueIndex;comment:文件唯一ID" json:"file_id"`
+	MD5             string          `gorm:"size:32;default:null;comment:文件MD5值" json:"md5"` // 新增MD5字段
 	CreatedAt       time.Time       `gorm:"type:datetime;not null;default:CURRENT_TIMESTAMP;comment:记录创建时间" json:"created_at"`
 	UpdatedAt       time.Time       `gorm:"type:datetime;not null;default:CURRENT_TIMESTAMP;comment:最后更新时间" json:"updated_at"`
 }

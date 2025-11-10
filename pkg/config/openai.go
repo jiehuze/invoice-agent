@@ -8,6 +8,8 @@ type Openai struct {
 	ChatPrompt  string `mapstructure:"chat_prompt"`
 	Prompt      string `mapstructure:"prompt"`
 	ParsePrompt string `mapstructure:"parse_prompt"`
+	FilePrompt  string `mapstructure:"file_prompt"`
+	TestPrompt  string `mapstructure:"test_prompt"`
 }
 
 func GetOpenaiConf() Openai {

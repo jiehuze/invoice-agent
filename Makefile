@@ -22,8 +22,8 @@ all: clean $(APP) tarball
 
 $(APP):
 	@echo "building $(APP) ..."
-	GOOS=$(OS) GOARCH=amd64 go build $(LDFLAGS) -o $(OUT_PATH)/$(APP)  main.go
-	#GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o $(OUT_PATH)/$(APP)  main.go
+	#GOOS=$(OS) GOARCH=amd64 go build $(LDFLAGS) -o $(OUT_PATH)/$(APP)  main.go
+	GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o $(OUT_PATH)/$(APP)  main.go
 
 tarball:
 	cp -rf conf $(OUT_PATH)/
