@@ -4,6 +4,7 @@ import (
 	"fmt"
 	log "github.com/sirupsen/logrus"
 	"invoice-agent/internal/app/models"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -83,7 +84,7 @@ func (s *AutoFillingService) sendProgress(taskInfo *TaskInfo, message string) {
 	s.tasks.Store(taskInfo.ID, taskInfo)
 
 	select {
-	case taskInfo.progressChan <- message + "\n":
+	case taskInfo.progressChan <- "\n" + message:
 		// 进度信息已发送
 	default:
 		// 通道已满，跳过
@@ -241,7 +242,7 @@ func (s *AutoFillingService) runAutoFilling(instance *AutoFillingInstance, taskI
 	}
 
 	s.sendProgress(taskInfo, "---")
-	s.sendProgress(taskInfo, "#### ▶ 启动报销任务（任务ID："+taskInfo.ID+"）")
+	s.sendProgress(taskInfo, "## ▶ 启动报销任务（任务ID："+taskInfo.ID+"）")
 
 	// 启动 Playwright
 	pw, err := playwright.Run()
@@ -290,7 +291,7 @@ func (s *AutoFillingService) runAutoFilling(instance *AutoFillingInstance, taskI
 func (s *AutoFillingService) executeFillingProcess(instance *AutoFillingInstance, taskInfo *TaskInfo) error {
 	// 导航到目标URL
 	s.sendProgress(taskInfo, "---")
-	s.sendProgress(taskInfo, "#### 🔧 正在进入报销系统...")
+	s.sendProgress(taskInfo, "## 🔧 正在进入报销系统...")
 	if _, err := instance.page.Goto("http://open.sky-dome.com.cn:9086/"); err != nil {
 		return fmt.Errorf("导航失败: %w", err)
 	}
@@ -317,7 +318,7 @@ func (s *AutoFillingService) executeFillingProcess(instance *AutoFillingInstance
 	}
 
 	// 填写基础信息
-	s.sendProgress(taskInfo, "#### 🔧 开始基础信息设置")
+	s.sendProgress(taskInfo, "## 🔧 开始基础信息设置")
 	if err := s.handleReimburseBasic(instance, taskInfo); err != nil {
 		s.sendProgress(taskInfo, fmt.Sprintf("填写基础信息出错: %v", err))
 		//return fmt.Errorf("填写基础信息失败: %w", err)
@@ -328,14 +329,14 @@ func (s *AutoFillingService) executeFillingProcess(instance *AutoFillingInstance
 	}
 
 	// 填写支付信息
-	s.sendProgress(taskInfo, "#### 💳 开始支付信息设置")
+	s.sendProgress(taskInfo, "## 💳 开始支付信息设置")
 	if err := s.handleReimbursePayInfo(instance, taskInfo); err != nil {
 		s.sendProgress(taskInfo, fmt.Sprintf("填写支付信息出错: %v", err))
 		return fmt.Errorf("填写支付信息失败: %w", err)
 	}
 
 	// 填写报销明细
-	s.sendProgress(taskInfo, "#### 📄 开始报销细节记录设置")
+	s.sendProgress(taskInfo, "## 📄 开始报销细节记录设置")
 	for i := 0; i < len(*instance.request.CostItems); i++ {
 		if err := s.handleAddDetail(instance, taskInfo); err != nil {
 			s.sendProgress(taskInfo, fmt.Sprintf("添加明细项出错: %v", err))
@@ -355,7 +356,7 @@ func (s *AutoFillingService) executeFillingProcess(instance *AutoFillingInstance
 		//return fmt.Errorf("滚动失败: %w", err)
 	}
 
-	s.sendProgress(taskInfo, "#### 上传发票中...")
+	s.sendProgress(taskInfo, "## 上传发票中...")
 	for _, filePath := range instance.request.InvoiceFiles {
 		if err := s.handleVatInvoiceUpload(instance, taskInfo, filePath); err != nil {
 			s.sendProgress(taskInfo, fmt.Sprintf("上传发票出错: %v", err))
@@ -536,21 +537,21 @@ func (s *AutoFillingService) handleAddDialog(instance *AutoFillingInstance, task
 
 func (s *AutoFillingService) handleReimburseBasic(instance *AutoFillingInstance, taskInfo *TaskInfo) error {
 	// 设置报销类型
-	s.sendProgress(taskInfo, "- ✅设置报销类型完成")
+	s.sendProgress(taskInfo, "- ✅ 设置报销类型完成")
 	if err := s.handleReimburseType(instance, taskInfo); err != nil {
 		s.sendProgress(taskInfo, fmt.Sprintf("设置报销类型失败:  %v", err))
 		return fmt.Errorf("设置报销类型失败: %w", err)
 	}
 
 	// 设置紧急类型
-	s.sendProgress(taskInfo, "- ✅设置紧急类型完成")
+	s.sendProgress(taskInfo, "- ✅ 设置紧急类型完成")
 	if err := s.handleUrgentType(instance, taskInfo); err != nil {
 		s.sendProgress(taskInfo, fmt.Sprintf("设置紧急类型失败: %v", err))
 		return fmt.Errorf("设置紧急类型失败: %w", err)
 	}
 
 	// 填写报销说明
-	s.sendProgress(taskInfo, "- ✅设置报销说明完成")
+	s.sendProgress(taskInfo, "- ✅ 设置报销说明完成")
 	if err := s.handleReimburseComment(instance, taskInfo); err != nil {
 		s.sendProgress(taskInfo, fmt.Sprintf("填写报销说明失败: %v", err))
 		return fmt.Errorf("填写报销说明失败: %w", err)
@@ -977,14 +978,14 @@ func (s *AutoFillingService) handleBillNumberInDetail(instance *AutoFillingInsta
 }
 
 func (s *AutoFillingService) handleVatInvoiceUpload(instance *AutoFillingInstance, taskInfo *TaskInfo, fileName string) error {
-	s.sendProgress(taskInfo, "- ✅ 上传发票文件: "+fileName)
+	s.sendProgress(taskInfo, "- ✅ 上传发票文件: "+filepath.Base(fileName))
 	if err := instance.page.Locator("input.el-upload__input").SetInputFiles([]string{fileName}); err != nil {
 		s.sendProgress(taskInfo, fmt.Sprintf("上传发票文件失败: %v", err))
 		return fmt.Errorf("上传发票文件失败: %w", err)
 	}
 
 	time.Sleep(5 * DelayShort)
-	s.sendProgress(taskInfo, "- 🟢 上传文件完成，发票文件为: "+fileName)
+	s.sendProgress(taskInfo, "- 🟢 上传文件完成，发票文件为: "+filepath.Base(fileName))
 	return nil
 }
 

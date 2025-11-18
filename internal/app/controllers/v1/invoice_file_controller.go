@@ -10,6 +10,7 @@ import (
 	"invoice-agent/internal/app/models"
 	"invoice-agent/internal/app/services"
 	"invoice-agent/internal/pkg/code"
+	"invoice-agent/pkg/util"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -93,7 +94,7 @@ func (c *InvoiceFileController) GetInvoiceFile(ctx *gin.Context) {
 
 // ListInvoiceFiles 获取发票文件列表
 func (c *InvoiceFileController) ListInvoiceFiles(ctx *gin.Context) {
-	limit, _ := strconv.Atoi(ctx.DefaultQuery("limit", "10"))
+	limit, _ := strconv.Atoi(ctx.DefaultQuery("limit", "100"))
 	offset, _ := strconv.Atoi(ctx.DefaultQuery("offset", "0"))
 	serviceType, _ := strconv.Atoi(ctx.DefaultQuery("service_type", "3"))
 	sessionId := ctx.Query("session_id")
@@ -274,8 +275,8 @@ func (c *InvoiceFileController) FileParseChat(ctx *gin.Context) {
 	ctx.Header("Connection", "keep-alive")
 
 	contentChan, errorChan := services.ChatClient.FileParseStream(ctx.Request.Context(), req)
-	controllers.SSEPush(ctx, "#### 分析单据后的json信息为：\n")
-	controllers.SSEPush(ctx, "```json\n")
+	_ = util.WriteAppendText(ctx.Writer, "\n#### 分析单据后的json信息")
+	_ = util.WriteAppendText(ctx.Writer, "\n```json")
 	// 收集完整的流式数据
 	var fullContent strings.Builder
 	for {
@@ -284,42 +285,48 @@ func (c *InvoiceFileController) FileParseChat(ctx *gin.Context) {
 			if !ok {
 				// 流结束，开始解析数据
 				log.Info("===== 流结束，开始解析数据")
-				controllers.SSEPush(ctx, "\n```\n")
+				_ = util.WriteAppendText(ctx.Writer, "\n```")
+				_ = util.WriteAppendText(ctx.Writer, "\n")
 				// 获取完整内容
 				contentStr := fullContent.String()
 				var invoiceFiles []models.InvoiceFile
 				// 解析JSON数据
 				if err := json.Unmarshal([]byte(contentStr), &invoiceFiles); err != nil {
-					errorMsg := fmt.Sprintf("AI助手: JSON解析失败: %v", err)
-					controllers.SSEPush(ctx, errorMsg)
+					errorMsg := fmt.Sprintf("AI助手: JSON解析失败: %v\n", err)
+					_ = util.WriteAppendText(ctx.Writer, "\n")
+					_ = util.WriteAppendText(ctx.Writer, errorMsg)
 					return
 				}
 
 				for _, invoiceFile := range invoiceFiles {
 					err := services.InvoiceFile.UpdateInvoiceFileByFileId(invoiceFile.FileID, &invoiceFile)
 					if err != nil {
-						errorMsg := fmt.Sprintf("AI助手: 更新发票文件失败: %v", err)
-						controllers.SSEPush(ctx, errorMsg)
+						errorMsg := fmt.Sprintf("AI助手: 更新发票文件失败: %v\n", err)
+						_ = util.WriteAppendText(ctx.Writer, "\n")
+						_ = util.WriteAppendText(ctx.Writer, errorMsg)
 					}
 				}
 
 				// 发送解析结果
-				resultMsg := fmt.Sprintf("AI助手: 共解析%d条发票记录", len(invoiceFiles))
-				controllers.SSEPush(ctx, resultMsg)
+				resultMsg := fmt.Sprintf("## 📋AI助手: 共解析%d条发票记录\n", len(invoiceFiles))
+				_ = util.WriteAppendText(ctx.Writer, "\n")
+				_ = util.WriteAppendText(ctx.Writer, resultMsg)
 
 				// 发送每条记录的详细信息
 				for i, invoice := range invoiceFiles {
-					detailMsg := fmt.Sprintf("AI助手: 发票%d: %s (%s) - %.2f元",
-						i+1, invoice.InvoiceType, invoice.InvoiceCode, invoice.TotalAmount)
-					controllers.SSEPush(ctx, detailMsg)
+					detailMsg := fmt.Sprintf("- 票据%d: %s (%s) - %.2f元, %s\n",
+						i+1, invoice.InvoiceType, invoice.ItemName, invoice.TotalAmount, invoice.FileName)
+					_ = util.WriteAppendText(ctx.Writer, "\n")
+					_ = util.WriteAppendText(ctx.Writer, detailMsg)
 				}
+				util.WriteDone(ctx.Writer)
 				return
 			}
 			// 实时处理内容
 			fmt.Print(content)
 			fullContent.WriteString(content)
 
-			controllers.SSEPush(ctx, content)
+			_ = util.WriteAppendText(ctx.Writer, content)
 		case err, ok := <-errorChan:
 			if ok && err != nil {
 				// 处理错误

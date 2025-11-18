@@ -21,10 +21,10 @@ func Response(c *gin.Context, code int, message string, data interface{}) {
 	c.JSON(http.StatusOK, resp)
 }
 
-func SSEPush(c *gin.Context, data interface{}) {
-	_, _ = c.Writer.WriteString("data: " + data.(string) + "\n\n")
-	c.Writer.Flush()
-}
+//func SSEPush(c *gin.Context, data interface{}) {
+//	_, _ = c.Writer.WriteString("data: " + data.(string) + "\n\n")
+//	c.Writer.Flush()
+//}
 
 func ResponseWithErr(c *gin.Context, code int, message string, err string, data interface{}) {
 	if nil == data {

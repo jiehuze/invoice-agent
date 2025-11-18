@@ -4,7 +4,6 @@ go 1.23
 
 require (
 	github.com/go-redsync/redsync/v4 v4.8.1
-	github.com/google/uuid v1.6.0
 	github.com/openai/openai-go v1.12.0
 	github.com/playwright-community/playwright-go v0.5200.1
 	github.com/redis/go-redis/v9 v9.0.5

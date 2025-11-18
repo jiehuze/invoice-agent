@@ -8,6 +8,7 @@ import (
 	"invoice-agent/internal/app/controllers"
 	"invoice-agent/internal/app/models"
 	"invoice-agent/internal/app/services"
+	"invoice-agent/pkg/util"
 	"net/http"
 	"strings"
 	"time"
@@ -41,8 +42,8 @@ func (c *InvoiceChatController) Chat(ctx *gin.Context) {
 	contentChan, errorChan := services.ChatClient.ChatStream(ctx, req)
 
 	if req.Parse {
-		controllers.SSEPush(ctx, "#### 提取报销的json信息为：\n")
-		controllers.SSEPush(ctx, "```json\n")
+		_ = util.WriteAppendText(ctx.Writer, "#### 提取报销的json信息")
+		_ = util.WriteAppendText(ctx.Writer, "\n```json")
 	}
 
 	var fullContent strings.Builder
@@ -55,17 +56,20 @@ func (c *InvoiceChatController) Chat(ctx *gin.Context) {
 				// 获取完整内容
 				contentStr := fullContent.String()
 				log.Infoln("提取的信息为：\n", contentStr)
-				controllers.SSEPush(ctx, "\n```\n")
+				_ = util.WriteAppendText(ctx.Writer, "\n```")
+				_ = util.WriteAppendText(ctx.Writer, "\n`")
 				//所有信息收集完成，开始进行数据解析和填报发票单流程
 				if req.Parse {
 					c.fillingStart(ctx, &req, &contentStr)
 				}
+				//结束
+				util.WriteDone(ctx.Writer)
 				return
 			}
 			// 实时处理内容
 			fmt.Print(content)
 			fullContent.WriteString(content)
-			controllers.SSEPush(ctx, content)
+			_ = util.WriteAppendText(ctx.Writer, content)
 		case err, ok := <-errorChan:
 			if ok && err != nil {
 				// 处理错误
@@ -119,13 +123,13 @@ func (c *InvoiceChatController) fillingStart(ctx *gin.Context, req *models.ChatR
 	log.Infoln("1---: ", autoFillingRequest)
 	err = services.AutoFilling.StartAutoFilling(autoFillingRequest.SessionId, &autoFillingRequest)
 	if err != nil {
-		controllers.SSEPush(ctx, "AI助手: 无法为你启动助手")
+		_ = util.WriteAppendText(ctx.Writer, "\nAI助手: 填开发票失败")
 		return
 	} // 获取进度通道
 
 	progressChan, exists := services.AutoFilling.GetTaskProgressChan(autoFillingRequest.SessionId)
 	if !exists {
-		controllers.SSEPush(ctx, "AI助手: 获取任务进度通道失败")
+		_ = util.WriteAppendText(ctx.Writer, "\nAI助手: 填开发票失败")
 		return
 	}
 	// 设置监听条件
@@ -142,28 +146,28 @@ func (c *InvoiceChatController) fillingStart(ctx *gin.Context, req *models.ChatR
 		case progress, ok := <-progressChan:
 			if !ok {
 				// 通道关闭，任务完成
-				controllers.SSEPush(ctx, "AI助手: 填开发票已完成")
+				_ = util.WriteAppendText(ctx.Writer, "\nAI助手: 填开发票已完成")
 				return
 			}
-			controllers.SSEPush(ctx, progress)
+			_ = util.WriteAppendText(ctx.Writer, progress)
 
 		case <-clientGone:
 			// 客户端断开连接
 			log.Warning("AI助手: 客户端连接断开，任务已取消")
-			controllers.SSEPush(ctx, "AI助手: 客户端连接断开，任务已取消")
+			_ = util.WriteAppendText(ctx.Writer, "\nAI助手: 客户端连接断开，任务已取消")
 			//c.service.CancelTask(taskID)
 			return
 
 		case <-timeout:
 			// 超时
 			log.Warning("AI助手: 任务执行超时，已取消\n")
-			controllers.SSEPush(ctx, "AI助手: 任务执行超时，已取消")
+			_ = util.WriteAppendText(ctx.Writer, "\nAI助手: 任务执行超时，已取消")
 			services.AutoFilling.CancelTask(autoFillingRequest.SessionId)
 			return
 
 		case <-time.After(30 * time.Second):
 			// 心跳检测，保持连接活跃
-			controllers.SSEPush(ctx, "AI助手: 检测到任务执行中...")
+			_ = util.WriteAppendText(ctx.Writer, "\nAI助手: 检测到任务执行中...")
 		}
 	}
 }
