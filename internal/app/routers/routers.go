@@ -39,6 +39,7 @@ func SetUp() *gin.Engine {
 			invoiceFileGroup.GET("/:id", controller.GetInvoiceFile)
 			invoiceFileGroup.PUT("/update", controller.UpdateInvoiceFile)
 			invoiceFileGroup.DELETE("/:id", controller.DeleteInvoiceFile)
+			invoiceFileGroup.DELETE("/delete", controller.DeleteUploadedInvoiceFile)
 			invoiceFileGroup.POST("/upload", controller.UploadInvoiceFile)
 			invoiceFileGroup.GET("/expensive", controller.GetInvoiceFileInExpensive)
 			invoiceFileGroup.POST("/parse", controller.FileParseChat)

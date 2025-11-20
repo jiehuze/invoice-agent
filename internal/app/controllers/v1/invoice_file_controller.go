@@ -9,7 +9,6 @@ import (
 	"invoice-agent/internal/app/controllers"
 	"invoice-agent/internal/app/models"
 	"invoice-agent/internal/app/services"
-	"invoice-agent/internal/pkg/code"
 	"invoice-agent/pkg/util"
 	"net/http"
 	"os"
@@ -120,7 +119,19 @@ func (c *InvoiceFileController) DeleteInvoiceFile(ctx *gin.Context) {
 		return
 	}
 
-	if err := c.invoiceFileService.DeleteInvoiceFile(id); err != nil {
+	invoiceFile, err1 := c.invoiceFileService.GetInvoiceFileByID(id)
+	if err1 != nil {
+		controllers.Response(ctx, http.StatusInternalServerError, "不存在这个文件：", err1)
+		return
+	}
+
+	if err = c.invoiceFileService.DeleteInvoiceFile(id); err != nil {
+		controllers.Response(ctx, http.StatusInternalServerError, "删除发票文件失败", err)
+		return
+	}
+
+	err = services.FileClient.DeleteFile(ctx.Request.Context(), strings.TrimSpace(invoiceFile.FileID))
+	if err != nil {
 		controllers.Response(ctx, http.StatusInternalServerError, "删除发票文件失败", err)
 		return
 	}
@@ -147,22 +158,43 @@ func (c *InvoiceFileController) GetInvoiceFileInExpensive(ctx *gin.Context) {
 }
 
 func (c *InvoiceFileController) DeleteUploadedInvoiceFile(ctx *gin.Context) {
-	fileIdsStr := ctx.PostForm("file_ids")
-	if fileIdsStr == "" {
-		controllers.Response(ctx, code.HTTPStatusErr, "请上传发票文件", nil)
+	// 从请求体中读取原始数据
+	rawData, err := ctx.GetRawData()
+	if err != nil {
+		controllers.Response(ctx, http.StatusBadRequest, "无法读取请求数据", err)
 		return
 	}
-	// 按逗号分割file_ids
-	fileIds := strings.Split(fileIdsStr, ",")
-	// 清理空格
+
+	// 将字节数据转换为字符串并清理特殊字符
+	rawString := strings.TrimSpace(string(rawData))
+
+	// 移除空格、换行等特殊字符，只保留逗号分隔的ID
+	//cleanString := strings.Map(func(r rune) rune {
+	//	if r == ',' || (r >= '0' && r <= '9') {
+	//		return r
+	//	}
+	//	return -1
+	//}, rawString)
+
+	// 按逗号分割ID
+	fileIds := strings.Split(rawString, ",")
+
 	for _, id := range fileIds {
-		services.FileClient.DeleteFile(ctx.Request.Context(), strings.TrimSpace(id))
+		log.Infoln("---------delete file: ", id)
+		err := services.FileClient.DeleteFile(ctx.Request.Context(), strings.TrimSpace(id))
+		if err != nil {
+			log.Infoln("---------delete file err: ", err)
+			controllers.Response(ctx, http.StatusInternalServerError, "删除发票文件失败", err)
+			return
+		}
 	}
 
 	controllers.Response(ctx, http.StatusOK, "删除成功", nil)
 }
 
-// / UploadInvoiceFileDirect 先保存文件到本地，然后上传到OpenAI
+/*
+UploadInvoiceFileDirect 先保存文件到本地，然后上传到OpenAI
+*/
 func (c *InvoiceFileController) UploadInvoiceFile(ctx *gin.Context) {
 	// 获取上传的文件
 	fileHeader, err := ctx.FormFile("file")
@@ -193,7 +225,7 @@ func (c *InvoiceFileController) UploadInvoiceFile(ctx *gin.Context) {
 	files, _ := services.InvoiceFile.ListInvoiceFilesByCont(tmp, 10, 0)
 	if files != nil && len(files) > 0 {
 		log.Errorf("文件重复, file: %s, md5: %s", fileHeader.Filename, md5)
-		controllers.Response(ctx, http.StatusBadRequest, "重复的文件...", md5)
+		controllers.Response(ctx, http.StatusBadRequest, "重复的文件...", tmp)
 		return
 	}
 
@@ -201,14 +233,15 @@ func (c *InvoiceFileController) UploadInvoiceFile(ctx *gin.Context) {
 	dirPath := filepath.Join("/app/output/uploads")
 	if err := os.MkdirAll(dirPath, os.ModePerm); err != nil {
 		log.Errorf("本地目录:%s, 创建失败", dirPath)
-		controllers.Response(ctx, http.StatusInternalServerError, "创建本地目录失败", err)
+		controllers.Response(ctx, http.StatusInternalServerError, "创建本地目录失败", tmp)
 		return
 	}
 
 	// 保存文件到本地时间命名的目录
 	localFilePath := filepath.Join(dirPath, fileHeader.Filename)
 	if err := ctx.SaveUploadedFile(fileHeader, localFilePath); err != nil {
-		controllers.Response(ctx, http.StatusInternalServerError, "保存文件到本地失败", err)
+		log.Errorf("保存文件到本地失败:%s", fileHeader.Filename)
+		controllers.Response(ctx, http.StatusInternalServerError, "保存文件到本地失败", tmp)
 		return
 	}
 
@@ -229,8 +262,8 @@ func (c *InvoiceFileController) UploadInvoiceFile(ctx *gin.Context) {
 	)
 	if err != nil {
 		// 如果上传OpenAI失败，删除已保存的本地文件
-		os.Remove(localFilePath)
-		controllers.Response(ctx, http.StatusInternalServerError, "文件上传到OpenAI失败", err)
+		_ = os.Remove(localFilePath)
+		controllers.Response(ctx, http.StatusInternalServerError, fmt.Sprintf("文件上传到OpenAI失败:%s", err), tmp)
 		return
 	}
 
@@ -246,9 +279,9 @@ func (c *InvoiceFileController) UploadInvoiceFile(ctx *gin.Context) {
 	// 保存到数据库
 	if err := c.invoiceFileService.CreateInvoiceFile(&invoiceFile); err != nil {
 		// 如果数据库保存失败，删除已保存的本地文件和OpenAI文件
-		os.Remove(localFilePath)
-		services.FileClient.DeleteFile(ctx.Request.Context(), fileId)
-		controllers.Response(ctx, http.StatusInternalServerError, "创建发票文件记录失败", err)
+		_ = os.Remove(localFilePath)
+		_ = services.FileClient.DeleteFile(ctx.Request.Context(), fileId)
+		controllers.Response(ctx, http.StatusInternalServerError, "创建发票文件记录失败", invoiceFile)
 		return
 	}
 
@@ -275,7 +308,7 @@ func (c *InvoiceFileController) FileParseChat(ctx *gin.Context) {
 	ctx.Header("Connection", "keep-alive")
 
 	contentChan, errorChan := services.ChatClient.FileParseStream(ctx.Request.Context(), req)
-	_ = util.WriteAppendText(ctx.Writer, "\n## 所有单据的json信息")
+	_ = util.WriteAppendText(ctx.Writer, "\n## 所有单据信息")
 	_ = util.WriteAppendText(ctx.Writer, "\n```json")
 	_ = util.WriteAppendText(ctx.Writer, "\n")
 	// 收集完整的流式数据
