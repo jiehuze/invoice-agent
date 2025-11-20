@@ -115,7 +115,7 @@ func (s *AutoFillingService) StartAutoFilling(taskID string, req *models.AutoFil
 		Status:       TaskStatusPending,
 		Progress:     "任务初始化中...",
 		StartedAt:    time.Now(),
-		progressChan: make(chan string),
+		progressChan: make(chan string, 10),
 		cancelChan:   make(chan struct{}),
 		doneChan:     make(chan struct{}),
 	}
@@ -251,7 +251,7 @@ func (s *AutoFillingService) runAutoFilling(instance *AutoFillingInstance, taskI
 	}
 	instance.pw = pw
 
-	s.sendProgress(taskInfo, "> 🔄 信息初始化中...")
+	s.sendProgress(taskInfo, "- 🔄 信息初始化中...")
 	log.Infoln("信息初始化中...")
 
 	// 启动浏览器
@@ -280,8 +280,7 @@ func (s *AutoFillingService) runAutoFilling(instance *AutoFillingInstance, taskI
 	}
 	instance.page = page
 
-	s.sendProgress(taskInfo, "> ✅ 报销任务启动准备完成")
-	s.sendProgress(taskInfo, "---")
+	s.sendProgress(taskInfo, "- ✅ 报销服务启动")
 
 	// 执行主要流程
 	return s.executeFillingProcess(instance, taskInfo)
@@ -356,7 +355,7 @@ func (s *AutoFillingService) executeFillingProcess(instance *AutoFillingInstance
 		//return fmt.Errorf("滚动失败: %w", err)
 	}
 
-	s.sendProgress(taskInfo, "## 上传发票中...")
+	s.sendProgress(taskInfo, "## 📎 上传发票中...")
 	for _, filePath := range instance.request.InvoiceFiles {
 		if err := s.handleVatInvoiceUpload(instance, taskInfo, filePath); err != nil {
 			s.sendProgress(taskInfo, fmt.Sprintf("上传发票出错: %v", err))
@@ -373,7 +372,7 @@ func (s *AutoFillingService) executeFillingProcess(instance *AutoFillingInstance
 	if err := s.handleSaveInfo(instance, taskInfo); err != nil {
 		return fmt.Errorf("保存信息失败: %w", err)
 	}
-	s.sendProgress(taskInfo, "> 报销任务完成")
+	//s.sendProgress(taskInfo, "> 报销任务完成")
 
 	return nil
 }
@@ -470,7 +469,7 @@ var AutoFillingClient *AutoFillingService
 //}
 
 func (s *AutoFillingService) handleLogin(instance *AutoFillingInstance, taskInfo *TaskInfo) error {
-	//s.sendProgress(taskInfo, "进入登录页面...")
+	s.sendProgress(taskInfo, "> 开始登录...")
 
 	// 等待用户名输入框
 	//s.sendProgress(taskInfo, "等待输入用户名和密码...")
@@ -508,8 +507,8 @@ func (s *AutoFillingService) handleLogin(instance *AutoFillingInstance, taskInfo
 
 	// 等待并重新加载
 	time.Sleep(DelayLong)
-	//s.sendProgress(taskInfo, "导航到报销页面...")
-	log.Infoln("导航到报销页面...")
+	s.sendProgress(taskInfo, "> 打开报销页...")
+	log.Infoln("> 打开报销页...")
 	if _, err := instance.page.Goto("http://open.sky-dome.com.cn:9086/#/reimbursement/employee"); err != nil {
 		s.sendProgress(taskInfo, fmt.Sprintf("导航到报销页面失败:  %v", err))
 		return fmt.Errorf("导航到报销页面失败: %w", err)
@@ -537,21 +536,21 @@ func (s *AutoFillingService) handleAddDialog(instance *AutoFillingInstance, task
 
 func (s *AutoFillingService) handleReimburseBasic(instance *AutoFillingInstance, taskInfo *TaskInfo) error {
 	// 设置报销类型
-	s.sendProgress(taskInfo, "- ✅ 设置报销类型完成")
+	s.sendProgress(taskInfo, "- ✅ 设置报销类型")
 	if err := s.handleReimburseType(instance, taskInfo); err != nil {
 		s.sendProgress(taskInfo, fmt.Sprintf("设置报销类型失败:  %v", err))
 		return fmt.Errorf("设置报销类型失败: %w", err)
 	}
 
 	// 设置紧急类型
-	s.sendProgress(taskInfo, "- ✅ 设置紧急类型完成")
+	s.sendProgress(taskInfo, "- ✅ 设置紧急类型")
 	if err := s.handleUrgentType(instance, taskInfo); err != nil {
 		s.sendProgress(taskInfo, fmt.Sprintf("设置紧急类型失败: %v", err))
 		return fmt.Errorf("设置紧急类型失败: %w", err)
 	}
 
 	// 填写报销说明
-	s.sendProgress(taskInfo, "- ✅ 设置报销说明完成")
+	s.sendProgress(taskInfo, "- ✅ 设置报销说明")
 	if err := s.handleReimburseComment(instance, taskInfo); err != nil {
 		s.sendProgress(taskInfo, fmt.Sprintf("填写报销说明失败: %v", err))
 		return fmt.Errorf("填写报销说明失败: %w", err)
@@ -564,7 +563,7 @@ func (s *AutoFillingService) handleReimburseBasic(instance *AutoFillingInstance,
 }
 
 func (s *AutoFillingService) handleReimburseType(instance *AutoFillingInstance, taskInfo *TaskInfo) error {
-	s.sendProgress(taskInfo, "填写报销类型...")
+	s.sendProgress(taskInfo, "> 填写报销类型...")
 	dialog := instance.page.GetByRole("dialog", playwright.PageGetByRoleOptions{Name: "dialog"})
 	if err := dialog.Locator("[placeholder=\"请选择报销类型\"]").Click(); err != nil {
 		s.sendProgress(taskInfo, fmt.Sprintf("点击报销类型下拉框失败: %v", err))
@@ -580,12 +579,12 @@ func (s *AutoFillingService) handleReimburseType(instance *AutoFillingInstance, 
 	}
 
 	time.Sleep(DelayShort)
-	s.sendProgress(taskInfo, "设置报销类型完成...")
+	s.sendProgress(taskInfo, "> 设置报销类型完成")
 	return nil
 }
 
 func (s *AutoFillingService) handleUrgentType(instance *AutoFillingInstance, taskInfo *TaskInfo) error {
-	s.sendProgress(taskInfo, "设置紧急类型...")
+	s.sendProgress(taskInfo, "> 开始设置紧急类型...")
 	dialog := instance.page.GetByRole("dialog", playwright.PageGetByRoleOptions{Name: "dialog"})
 	if err := dialog.Locator("[placeholder=\"请选择紧急类型\"]").Click(); err != nil {
 		s.sendProgress(taskInfo, fmt.Sprintf("点击紧急类型下拉框失败: %v", err))
@@ -601,19 +600,19 @@ func (s *AutoFillingService) handleUrgentType(instance *AutoFillingInstance, tas
 	}
 
 	time.Sleep(DelayShort)
-	s.sendProgress(taskInfo, "设置紧急类型完成...")
+	s.sendProgress(taskInfo, "> 设置紧急类型完成")
 	return nil
 }
 
 func (s *AutoFillingService) handleReimburseComment(instance *AutoFillingInstance, taskInfo *TaskInfo) error {
-	s.sendProgress(taskInfo, "填写报销说明:"+instance.request.BasicInfo.Comment)
+	s.sendProgress(taskInfo, "> 填写报销说明:"+instance.request.BasicInfo.Comment)
 	if err := instance.page.Locator("[placeholder=\"请输入报销说明\"]").Fill(instance.request.BasicInfo.Comment); err != nil {
 		s.sendProgress(taskInfo, fmt.Sprintf("填写报销说明失败: %v", err))
 		return fmt.Errorf("填写报销说明失败: %w", err)
 	}
 
 	time.Sleep(DelayShort)
-	s.sendProgress(taskInfo, "设置报销说明完成...")
+	s.sendProgress(taskInfo, "> 设置报销说明完成")
 	return nil
 }
 
@@ -656,7 +655,7 @@ func (s *AutoFillingService) handleReimbursePayInfo(instance *AutoFillingInstanc
 	}
 
 	time.Sleep(DelayShort)
-	s.sendProgress(taskInfo, "> 🟢 支付信息设置完成")
+	s.sendProgress(taskInfo, "- 🟢 支付信息设置完成")
 	s.sendProgress(taskInfo, "---")
 	return nil
 }
@@ -665,13 +664,13 @@ func (s *AutoFillingService) selectDropdownItem(instance *AutoFillingInstance, t
 	allLiElements := instance.page.Locator(".el-select-dropdown__item")
 	count, err := allLiElements.Count()
 	if err != nil {
-		s.sendProgress(taskInfo, fmt.Sprintf("%v获取下拉选项数量失败", desc))
+		s.sendProgress(taskInfo, fmt.Sprintf("> %v获取下拉选项数量失败", desc))
 		return fmt.Errorf("获取下拉选项数量失败: %w", err)
 	}
 
 	// 如果没有任何选项，直接返回
 	if count == 0 {
-		s.sendProgress(taskInfo, fmt.Sprintf("%v下拉框无选项，跳过选择", desc))
+		s.sendProgress(taskInfo, fmt.Sprintf("> %v下拉框无选项，跳过选择", desc))
 		return nil
 	}
 
@@ -731,9 +730,9 @@ func (s *AutoFillingService) selectDropdownItem(instance *AutoFillingInstance, t
 		if err := selectedLocator.Click(); err != nil {
 			return fmt.Errorf("选择%v失败: %w", desc, err)
 		}
-		s.sendProgress(taskInfo, fmt.Sprintf("设置%v完成（%s: %s）", desc, selectionType, strings.TrimSpace(selectedText)))
+		s.sendProgress(taskInfo, fmt.Sprintf("> 设置%v完成（%s: %s）", desc, selectionType, strings.TrimSpace(selectedText)))
 	} else {
-		s.sendProgress(taskInfo, fmt.Sprintf("未找到可选的%v选项为：%v，跳过选择", desc, selectionType))
+		s.sendProgress(taskInfo, fmt.Sprintf("> **未找到可选的%v选项为：%v，跳过选择**", desc, selectionType))
 	}
 
 	time.Sleep(DelayShort)
@@ -741,7 +740,7 @@ func (s *AutoFillingService) selectDropdownItem(instance *AutoFillingInstance, t
 }
 
 func (s *AutoFillingService) handleBusinessDept(instance *AutoFillingInstance, taskInfo *TaskInfo) error {
-	s.sendProgress(taskInfo, "设置业务发生部门...")
+	s.sendProgress(taskInfo, "> 设置业务发生部门...")
 	businessDept := instance.page.Locator("div.el-form-item.is-required.custom-form-render-item.custom-form-render-item-twoline")
 	if err := businessDept.Locator("[placeholder='请选择']").Click(); err != nil {
 		return fmt.Errorf("点击业务发生部门下拉框失败: %w", err)
@@ -753,7 +752,7 @@ func (s *AutoFillingService) handleBusinessDept(instance *AutoFillingInstance, t
 }
 
 func (s *AutoFillingService) handleBudgetDept(instance *AutoFillingInstance, taskInfo *TaskInfo) error {
-	s.sendProgress(taskInfo, "设置预算承担部门...")
+	s.sendProgress(taskInfo, "> 设置预算承担部门...")
 	budgetLocator := instance.page.Locator("span:has-text(\"预算承担部门\")").Locator("..").Locator("..").Locator(".el-input__inner")
 	if err := budgetLocator.Click(); err != nil {
 		return fmt.Errorf("点击预算承担部门下拉框失败: %w", err)
@@ -766,7 +765,7 @@ func (s *AutoFillingService) handleBudgetDept(instance *AutoFillingInstance, tas
 }
 
 func (s *AutoFillingService) handleProjectType(instance *AutoFillingInstance, taskInfo *TaskInfo) error {
-	s.sendProgress(taskInfo, "设置项目类型...")
+	s.sendProgress(taskInfo, "> 设置项目类型...")
 	dialog := instance.page.GetByRole("dialog", playwright.PageGetByRoleOptions{Name: "dialog"})
 	if err := dialog.Locator("[placeholder=\"项目类型\"]").Click(); err != nil {
 		return fmt.Errorf("点击项目类型下拉框失败: %w", err)
@@ -779,7 +778,7 @@ func (s *AutoFillingService) handleProjectType(instance *AutoFillingInstance, ta
 }
 
 func (s *AutoFillingService) handleProject(instance *AutoFillingInstance, taskInfo *TaskInfo) error {
-	s.sendProgress(taskInfo, "设置项目...")
+	s.sendProgress(taskInfo, "> 设置项目...")
 	dialog := instance.page.GetByRole("dialog", playwright.PageGetByRoleOptions{Name: "dialog"})
 	if err := dialog.Locator("[placeholder=\"请选择项目/成本中心\"]").Click(); err != nil {
 		s.sendProgress(taskInfo, fmt.Sprintf("点击项目下拉框失败: %v", err))
@@ -793,7 +792,7 @@ func (s *AutoFillingService) handleProject(instance *AutoFillingInstance, taskIn
 }
 
 func (s *AutoFillingService) handlePayDept(instance *AutoFillingInstance, taskInfo *TaskInfo) error {
-	s.sendProgress(taskInfo, "设置付款公司...")
+	s.sendProgress(taskInfo, "> 设置付款公司...")
 	payLocator := instance.page.Locator("span:has-text(\"付款公司\")").Locator("..").Locator("..").Locator(".el-input__inner")
 	if err := payLocator.Click(); err != nil {
 		s.sendProgress(taskInfo, fmt.Sprintf("点击付款公司下拉框失败: %v", err))
@@ -888,7 +887,7 @@ func (s *AutoFillingService) handleReimburseDetail(instance *AutoFillingInstance
 	}
 
 	time.Sleep(DelayShort)
-	s.sendProgress(taskInfo, fmt.Sprintf("报销明细第 %d 行填写完成", trIndex))
+	s.sendProgress(taskInfo, fmt.Sprintf("- ✅ 报销明细第 %d 行填写完成", trIndex))
 	return nil
 }
 
@@ -990,13 +989,13 @@ func (s *AutoFillingService) handleVatInvoiceUpload(instance *AutoFillingInstanc
 }
 
 func (s *AutoFillingService) handleSaveInfo(instance *AutoFillingInstance, taskInfo *TaskInfo) error {
-	s.sendProgress(taskInfo, "#### 💾 保存信息...")
+	s.sendProgress(taskInfo, "## 💾 保存信息...")
 	if err := instance.page.GetByRole("button", playwright.PageGetByRoleOptions{Name: "保存"}).Click(); err != nil {
 		s.sendProgress(taskInfo, fmt.Sprintf("点击保存按钮失败: %v", err))
 		return fmt.Errorf("点击保存按钮失败: %w", err)
 	}
 
 	time.Sleep(DelayNormal)
-	s.sendProgress(taskInfo, "> 🟢 信息保存完成")
+	s.sendProgress(taskInfo, "- 🟢 信息保存完成")
 	return nil
 }

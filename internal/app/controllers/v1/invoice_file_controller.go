@@ -275,8 +275,9 @@ func (c *InvoiceFileController) FileParseChat(ctx *gin.Context) {
 	ctx.Header("Connection", "keep-alive")
 
 	contentChan, errorChan := services.ChatClient.FileParseStream(ctx.Request.Context(), req)
-	_ = util.WriteAppendText(ctx.Writer, "\n#### 分析单据后的json信息")
+	_ = util.WriteAppendText(ctx.Writer, "\n## 所有单据的json信息")
 	_ = util.WriteAppendText(ctx.Writer, "\n```json")
+	_ = util.WriteAppendText(ctx.Writer, "\n")
 	// 收集完整的流式数据
 	var fullContent strings.Builder
 	for {

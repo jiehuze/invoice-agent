@@ -42,8 +42,9 @@ func (c *InvoiceChatController) Chat(ctx *gin.Context) {
 	contentChan, errorChan := services.ChatClient.ChatStream(ctx, req)
 
 	if req.Parse {
-		_ = util.WriteAppendText(ctx.Writer, "#### 提取报销的json信息")
+		_ = util.WriteAppendText(ctx.Writer, "## 报销信息")
 		_ = util.WriteAppendText(ctx.Writer, "\n```json")
+		_ = util.WriteAppendText(ctx.Writer, "\n")
 	}
 
 	var fullContent strings.Builder
@@ -57,7 +58,7 @@ func (c *InvoiceChatController) Chat(ctx *gin.Context) {
 				contentStr := fullContent.String()
 				log.Infoln("提取的信息为：\n", contentStr)
 				_ = util.WriteAppendText(ctx.Writer, "\n```")
-				_ = util.WriteAppendText(ctx.Writer, "\n`")
+				_ = util.WriteAppendText(ctx.Writer, "\n")
 				//所有信息收集完成，开始进行数据解析和填报发票单流程
 				if req.Parse {
 					c.fillingStart(ctx, &req, &contentStr)
@@ -136,38 +137,34 @@ func (c *InvoiceChatController) fillingStart(ctx *gin.Context, req *models.ChatR
 	timeout := time.After(30 * time.Minute) // 30分钟超时
 	clientGone := ctx.Request.Context().Done()
 
-	// 开始监听进度
-	//_, _ = ctx.Writer.WriteString("AI助手: 任务已启动，任务ID: " + autoFillingRequest.SessionId + "\n")
-	//ctx.Writer.Flush()
-
 	// 监听自动填充服务的进度
 	for {
 		select {
 		case progress, ok := <-progressChan:
 			if !ok {
 				// 通道关闭，任务完成
-				_ = util.WriteAppendText(ctx.Writer, "\nAI助手: 填开发票已完成")
+				_ = util.WriteAppendText(ctx.Writer, "\n## ✅ 报销服务已完成，请查看OA系统，审核后提交。。。")
 				return
 			}
 			_ = util.WriteAppendText(ctx.Writer, progress)
 
 		case <-clientGone:
 			// 客户端断开连接
-			log.Warning("AI助手: 客户端连接断开，任务已取消")
+			log.Warning("\n> 客户端连接断开，任务已取消")
 			_ = util.WriteAppendText(ctx.Writer, "\nAI助手: 客户端连接断开，任务已取消")
 			//c.service.CancelTask(taskID)
 			return
 
 		case <-timeout:
 			// 超时
-			log.Warning("AI助手: 任务执行超时，已取消\n")
+			log.Warning("\n> 任务执行超时，已取消\n")
 			_ = util.WriteAppendText(ctx.Writer, "\nAI助手: 任务执行超时，已取消")
 			services.AutoFilling.CancelTask(autoFillingRequest.SessionId)
 			return
 
 		case <-time.After(30 * time.Second):
 			// 心跳检测，保持连接活跃
-			_ = util.WriteAppendText(ctx.Writer, "\nAI助手: 检测到任务执行中...")
+			_ = util.WriteAppendText(ctx.Writer, "\n> 检测到任务执行中...")
 		}
 	}
 }
